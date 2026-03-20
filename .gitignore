@@ -1,0 +1,20 @@
+# Build artefacts
+fat12tool
+fat12mount
+fat12_core_test
+*.o
+
+# macOS
+.DS_Store
+
+# Generated docs/output
+docs/
+*.log
+
+# Temporary mount/test directories
+mnt/
+.tmp/
+
+# Disk images (excluding samples if needed, but safer to ignore)
+*.img
+*.dsk
