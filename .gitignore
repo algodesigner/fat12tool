@@ -15,6 +15,7 @@ docs/
 mnt/
 .tmp/
 
-# Disk images (excluding samples if needed, but safer to ignore)
+# Disk images (excluding samples)
 *.img
+!sample-*.img
 *.dsk
