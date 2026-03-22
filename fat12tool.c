@@ -45,13 +45,35 @@ static void trim_newline(char *s)
 static void normalize_path(
         Session *sess, const char *in, char *out, size_t out_cap)
 {
+    if (out_cap == 0) return;
+
     if (in[0] == '/') {
-        snprintf(out, out_cap, "%s", in);
-    } else {
-        if (strcmp(sess->cwd_path, "/") == 0) {
-            snprintf(out, out_cap, "/%s", in);
+        strncpy(out, in, out_cap - 1);
+        out[out_cap - 1] = '\0';
         } else {
-            snprintf(out, out_cap, "%s/%s", sess->cwd_path, in);
+            size_t cwd_len = strlen(sess->cwd_path);
+            size_t in_len = strlen(in);
+
+            if (strcmp(sess->cwd_path, "/") == 0) {
+                size_t copy_len = in_len < out_cap - 1 ? in_len : (out_cap > 1 ? out_cap - 1 : 0);
+                out[0] = '/';
+                memcpy(out + 1, in, copy_len);
+                out[copy_len + 1] = '\0';
+            } else {
+                size_t avail = out_cap;
+                size_t copy_in_len = in_len;
+
+            if (cwd_len + 1 > avail) {
+                copy_in_len = 0;
+            } else {
+                memcpy(out, sess->cwd_path, cwd_len);
+                out[cwd_len] = '/';
+                if (cwd_len + 1 + copy_in_len + 1 > avail) {
+                    copy_in_len = avail > cwd_len + 1 ? avail - cwd_len - 1 : 0;
+                }
+            }
+            memcpy(out + cwd_len + 1, in, copy_in_len);
+            out[cwd_len + 1 + copy_in_len] = '\0';
         }
     }
 }

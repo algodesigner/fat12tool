@@ -44,9 +44,9 @@ echo "from-host-write" > "$HOST_SRC"
   echo "exit"
 } | "$ROOT_DIR/fat12tool" "$TMP_IMG" > "$LOG" 2>&1
 
-rg -q "fat12:/>" "$LOG"
-rg -q "hello from p1" "$LOG"
-rg -q "name=CLI.TXT" "$LOG"
+grep -q "fat12:/>" "$LOG"
+grep -q "hello from p1" "$LOG"
+grep -q "name=CLI.TXT" "$LOG"
 
 grep -q "from-host-write" "$HOST_OUT"
 
