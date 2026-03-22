@@ -8,8 +8,10 @@
  * @file fat12tool.c
  * @brief Interactive FAT12 shell for direct image manipulation.
  */
+#define _POSIX_C_SOURCE 200809L
 
 #include "fat12_core.h"
+
 
 #include <ctype.h>
 #include <errno.h>
@@ -42,8 +44,7 @@ static void normalize_path(
         Session *sess, const char *in, char *out, size_t out_cap)
 {
     if (in[0] == '/') {
-        strncpy(out, in, out_cap - 1);
-        out[out_cap - 1] = '\0';
+        snprintf(out, out_cap, "%s", in);
     } else {
         if (strcmp(sess->cwd_path, "/") == 0) {
             snprintf(out, out_cap, "/%s", in);
@@ -51,11 +52,6 @@ static void normalize_path(
             snprintf(out, out_cap, "%s/%s", sess->cwd_path, in);
         }
     }
-
-    // Very basic normalization of /./ and /../
-    // In a real shell we'd do better, but let's keep it simple for now
-    // as fat12_core expects absolute paths anyway and doesn't handle ..
-    // internally
 }
 
 static int list_cb(const char *name, int is_dir, uint32_t size, void *user)
@@ -257,7 +253,7 @@ int main(int argc, char **argv)
             if (fat12_stat(&fs, path, &node) != 0 || !node.is_dir) {
                 fprintf(stderr, "cd: directory not found: %s\n", path);
             } else {
-                strncpy(sess.cwd_path, path, sizeof(sess.cwd_path) - 1);
+                snprintf(sess.cwd_path, sizeof(sess.cwd_path), "%s", path);
             }
             continue;
         }

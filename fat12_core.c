@@ -13,6 +13,9 @@
  * targets FAT12 short-name semantics and is shared by both CLI and FUSE
  * frontends.
  */
+#define _POSIX_C_SOURCE 200809L
+#define _FILE_OFFSET_BITS 64
+
 #include "fat12_core.h"
 
 #include <ctype.h>

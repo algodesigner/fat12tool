@@ -8,6 +8,9 @@
  * @file fat12_fuse.c
  * @brief FUSE frontend that exposes a FAT12 image as a mountable filesystem.
  */
+#define _GNU_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#define _DARWIN_C_SOURCE
 #define _FILE_OFFSET_BITS 64
 
 #include "fat12_core.h"
@@ -163,14 +166,18 @@ static int fat12fs_getattr(const char *path, struct stat *st)
         st->st_ino = fat12_hash_ino(path);
     struct timespec ts;
     fat_time_to_timespec(node.wrt_time, node.wrt_date, &ts);
-#if defined(__APPLE__)
+#if defined(__linux__)
+    st->st_mtim = ts;
+    st->st_atim = ts;
+    st->st_ctim = ts;
+#elif defined(__APPLE__)
     st->st_mtimespec = ts;
     st->st_atimespec = ts;
     st->st_ctimespec = ts;
 #else
-    st->st_mtim = ts;
-    st->st_atim = ts;
-    st->st_ctim = ts;
+    st->st_mtime = ts.tv_sec;
+    st->st_atime = ts.tv_sec;
+    st->st_ctime = ts.tv_sec;
 #endif
     return 0;
 }
@@ -266,8 +273,7 @@ static int fat12fs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
     if (ctx->readdir_ready && strcmp(path, ctx->readdir_path) == 0)
         return 0;
     ctx->readdir_ready = 1;
-    strncpy(ctx->readdir_path, path, sizeof(ctx->readdir_path) - 1);
-    ctx->readdir_path[sizeof(ctx->readdir_path) - 1] = '\0';
+    snprintf(ctx->readdir_path, sizeof(ctx->readdir_path), "%s", path);
 #endif
 
     ReaddirState state = {buf, filler, off, 0};
@@ -320,8 +326,7 @@ static int fat12fs_opendir(const char *path, struct fuse_file_info *fi)
         return -ENOTDIR;
 #if !defined(__linux__)
     ctx->readdir_ready = 0;
-    strncpy(ctx->readdir_path, path, sizeof(ctx->readdir_path) - 1);
-    ctx->readdir_path[sizeof(ctx->readdir_path) - 1] = '\0';
+    snprintf(ctx->readdir_path, sizeof(ctx->readdir_path), "%s", path);
 #endif
     return 0;
 }
