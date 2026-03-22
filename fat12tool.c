@@ -8,9 +8,7 @@
  * @file fat12tool.c
  * @brief Interactive FAT12 shell for direct image manipulation.
  */
-#define _POSIX_C_SOURCE 200809L
 #define _GNU_SOURCE
-#endif
 #define _XOPEN_SOURCE 700
 
 #include "fat12_core.h"
