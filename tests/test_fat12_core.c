@@ -8,6 +8,7 @@
  * @file test_fat12_core.c
  * @brief End-to-end API tests for the FAT12 core library.
  */
+#define _GNU_SOURCE
 #include "../fat12_core.h"
 
 #include <errno.h>
@@ -39,10 +40,13 @@ typedef struct {
 static int copy_file(const char *src, const char *dst)
 {
     FILE *in = fopen(src, "rb");
-    if (!in)
+    if (!in) {
+        perror("fopen src");
         return -1;
+    }
     FILE *out = fopen(dst, "wb");
     if (!out) {
+        perror("fopen dst");
         fclose(in);
         return -1;
     }

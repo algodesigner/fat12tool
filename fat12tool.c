@@ -23,7 +23,7 @@
 #include <time.h>
 
 typedef struct {
-    char cwd_path[1024];
+    char cwd_path[4096];
 } Session;
 
 static void trim_newline(char *s)
@@ -217,7 +217,7 @@ int main(int argc, char **argv)
             continue;
         }
         if (strcmp(args[0], "ls") == 0) {
-            char path[2048];
+            char path[8192];
             if (ac >= 2) {
                 normalize_path(&sess, args[1], path, sizeof(path));
             } else {
@@ -233,7 +233,7 @@ int main(int argc, char **argv)
                 fprintf(stderr, "cd: missing path\n");
                 continue;
             }
-            char path[2048];
+            char path[8192];
             normalize_path(&sess, args[1], path, sizeof(path));
 
             // Special case for .. which isn't handled by normalize_path well
@@ -263,7 +263,7 @@ int main(int argc, char **argv)
                 fprintf(stderr, "stat: missing path\n");
                 continue;
             }
-            char path[2048];
+            char path[8192];
             normalize_path(&sess, args[1], path, sizeof(path));
             Fat12Node node;
             if (fat12_stat(&fs, path, &node) != 0) {
@@ -289,7 +289,7 @@ int main(int argc, char **argv)
                 fprintf(stderr, "cat: missing path\n");
                 continue;
             }
-            char path[2048];
+            char path[8192];
             normalize_path(&sess, args[1], path, sizeof(path));
             Fat12Node node;
             if (fat12_stat(&fs, path, &node) != 0 || node.is_dir) {
@@ -318,7 +318,7 @@ int main(int argc, char **argv)
                 fprintf(stderr, "touch: missing path\n");
                 continue;
             }
-            char path[2048];
+            char path[8192];
             normalize_path(&sess, args[1], path, sizeof(path));
             if (fat12_create(&fs, path) != 0) {
                 fprintf(stderr, "touch: failed to create %s\n", path);
@@ -330,7 +330,7 @@ int main(int argc, char **argv)
                 fprintf(stderr, "mkdir: missing path\n");
                 continue;
             }
-            char path[2048];
+            char path[8192];
             normalize_path(&sess, args[1], path, sizeof(path));
             if (fat12_mkdir(&fs, path) != 0) {
                 fprintf(stderr, "mkdir: failed to create directory %s\n", path);
@@ -342,7 +342,7 @@ int main(int argc, char **argv)
                 fprintf(stderr, "rm: missing path\n");
                 continue;
             }
-            char path[2048];
+            char path[8192];
             normalize_path(&sess, args[1], path, sizeof(path));
             if (fat12_unlink(&fs, path) != 0) {
                 fprintf(stderr, "rm: failed to remove %s\n", path);
@@ -354,7 +354,7 @@ int main(int argc, char **argv)
                 fprintf(stderr, "rmdir: missing path\n");
                 continue;
             }
-            char path[2048];
+            char path[8192];
             normalize_path(&sess, args[1], path, sizeof(path));
             if (fat12_rmdir(&fs, path) != 0) {
                 fprintf(stderr, "rmdir: failed to remove %s\n", path);
@@ -366,7 +366,7 @@ int main(int argc, char **argv)
                 fprintf(stderr, "mv: usage mv <from> <to>\n");
                 continue;
             }
-            char from[2048], to[2048];
+            char from[8192], to[8192];
             normalize_path(&sess, args[1], from, sizeof(from));
             normalize_path(&sess, args[2], to, sizeof(to));
             if (fat12_rename(&fs, from, to) != 0) {
@@ -379,7 +379,7 @@ int main(int argc, char **argv)
                 fprintf(stderr, "read: usage read <img> <host>\n");
                 continue;
             }
-            char path[2048];
+            char path[8192];
             normalize_path(&sess, args[1], path, sizeof(path));
             Fat12Node node;
             if (fat12_stat(&fs, path, &node) != 0 || node.is_dir) {
@@ -418,7 +418,7 @@ int main(int argc, char **argv)
                 fprintf(stderr, "write: cannot read host file %s\n", args[1]);
                 continue;
             }
-            char path[2048];
+            char path[8192];
             normalize_path(&sess, args[2], path, sizeof(path));
 
 

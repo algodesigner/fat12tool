@@ -34,6 +34,7 @@
     const char *path, off_t size, struct fuse_file_info *fi
 #define FAT12_UTIMENS_SIG \
     const char *path, const struct timespec tv[2], struct fuse_file_info *fi
+#define FAT12_GETATTR_SIG const char *path, struct stat *st, struct fuse_file_info *fi
 #else
 #define FUSE_USE_VERSION 26
 #include <fuse.h>
@@ -41,6 +42,7 @@
 #define FAT12_FILLER_FLAGS , 0
 #define FAT12_TRUNCATE_SIG const char *path, off_t size
 #define FAT12_UTIMENS_SIG const char *path, const struct timespec tv[2]
+#define FAT12_GETATTR_SIG const char *path, struct stat *st
 #endif
 
 #pragma pack(push, 1)
@@ -138,8 +140,11 @@ static void fat_time_to_timespec(
  * @param st Output stat structure.
  * @return 0 on success, negative errno-style code on failure.
  */
-static int fat12fs_getattr(const char *path, struct stat *st)
+static int fat12fs_getattr(FAT12_GETATTR_SIG)
 {
+#if defined(__linux__)
+    (void)fi;
+#endif
     Fat12Ctx *ctx = ctx_from_fuse();
     memset(st, 0, sizeof(*st));
 
