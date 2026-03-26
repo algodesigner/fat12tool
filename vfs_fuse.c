@@ -582,7 +582,12 @@ static int vfs_fuse_unmount(const char *mountpoint)
                   mountpoint);
         return 1;
     }
-    vfs_info("Successfully unmounted '%s'\n", mountpoint);
+
+    if (rmdir(mountpoint) == 0) {
+        vfs_info("Successfully unmounted and removed '%s'\n", mountpoint);
+    } else {
+        vfs_info("Successfully unmounted '%s'\n", mountpoint);
+    }
     return 0;
 }
 

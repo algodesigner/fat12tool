@@ -81,19 +81,23 @@ LOG="fat12-fuse-$$.log"
 SUCCESS=0
 
 cleanup() {
-  if [ -n "${MOUNT_PID:-}" ]; then
-    kill "$MOUNT_PID" >/dev/null 2>&1 || true
-    sleep 0.5
-    kill -9 "$MOUNT_PID" >/dev/null 2>&1 || true
-  fi
   if [ "$OS" = "Windows" ]; then
     $UNMOUNT_CMD "$MNT_TARGET" >/dev/null 2>&1 || true
+    sleep 2
+    taskkill //F //IM fat12mount.exe >/dev/null 2>&1 || true
+    sleep 1
   else
+    if [ -n "${MOUNT_PID:-}" ]; then
+      kill "$MOUNT_PID" >/dev/null 2>&1 || true
+      sleep 0.5
+      kill -9 "$MOUNT_PID" >/dev/null 2>&1 || true
+    fi
     if mount | grep -q "on $MNT_DIR "; then
       $UNMOUNT_CMD "$MNT_DIR" >/dev/null 2>&1 || true
     fi
   fi
-  rm -f "$TMP_IMG"
+  sleep 1
+  rm -f "$TMP_IMG" 2>/dev/null || true
   if [ "$SUCCESS" -eq 1 ]; then
     rm -f "$LOG"
   else
@@ -110,7 +114,7 @@ if [ "$OS" = "Darwin" ]; then
   EXTRA_FUSE_ARGS="-d"
 fi
 
-"$FAT12MOUNT" --image "$TMP_IMG" --mount "$MNT_TARGET" -f $EXTRA_FUSE_ARGS >"$LOG" 2>&1 &
+"$FAT12MOUNT" --image "$TMP_IMG" --mount "$MNT_TARGET" $EXTRA_FUSE_ARGS >"$LOG" 2>&1 &
 MOUNT_PID=$!
 
 mounted=0
@@ -120,6 +124,12 @@ while [ "$i" -lt 50 ]; do
   if [ "$OS" = "Windows" ]; then
     if ls "$MNT_DIR" >/dev/null 2>&1; then
       mounted=1
+    fi
+    # On Windows, also check if we can list any files
+    if [ -d "$MNT_DIR" ] && ls "$MNT_DIR" 2>/dev/null | grep -q .; then
+      mounted=1
+    fi
+    if [ "$mounted" -eq 1 ]; then
       break
     fi
   else
@@ -137,20 +147,23 @@ done
 
 if [ "$mounted" -ne 1 ]; then
   echo "Mount did not become ready" >&2
-  if [ "$exit_status" -eq 133 ]; then
-    echo "fat12mount exited with SIGTRAP (133). On macOS this usually" >&2
-    echo "means FUSE-T could not initialize; ensure this terminal/app has" >&2
-    echo "Network Volumes permission in Privacy & Security." >&2
-  fi
-  tail -n 50 "$LOG" >&2 || true
-  if [ "$OS" = "Darwin" ] && [ -f "$HOME/Library/Logs/fuse-t/fuse-t.err" ]; then
-    echo "---- fuse-t.err (tail) ----" >&2
-    tail -n 50 "$HOME/Library/Logs/fuse-t/fuse-t.err" >&2 || true
-  fi
-  if [ "$OS" = "Darwin" ] && [ -f "$HOME/Library/Logs/fuse-t/fuse-t.log" ]; then
-    echo "---- fuse-t.log (tail) ----" >&2
-    tail -n 50 "$HOME/Library/Logs/fuse-t/fuse-t.log" >&2 || true
-  fi
+  echo "Mount process exit status: $exit_status" >&2
+  cat "$LOG" >&2 || true
+  exit 1
+fi
+
+# Verify filesystem has content
+sleep 1
+FILE_COUNT=$(ls -1 "$MNT_DIR" 2>/dev/null | wc -l)
+if [ "$FILE_COUNT" -lt 1 ]; then
+  echo "ERROR: Mounted filesystem is empty (expected files in image)" >&2
+  cat "$LOG" >&2 || true
+  exit 1
+fi
+
+if grep -q "mount point in use" "$LOG" 2>/dev/null; then
+  echo "ERROR: Mount point already in use (stale mount?)" >&2
+  cat "$LOG" >&2
   exit 1
 fi
 
@@ -170,20 +183,23 @@ done
 
 if [ "$ready" -ne 1 ]; then
   echo "Mounted but HELLO.TXT not readable" >&2
-  tail -n 50 "$LOG" >&2 || true
-  if [ "$OS" = "Darwin" ] && [ -f "$HOME/Library/Logs/fuse-t/fuse-t.err" ]; then
-    echo "---- fuse-t.err (tail) ----" >&2
-    tail -n 50 "$HOME/Library/Logs/fuse-t/fuse-t.err" >&2 || true
-  fi
-  if [ "$OS" = "Darwin" ] && [ -f "$HOME/Library/Logs/fuse-t/fuse-t.log" ]; then
-    echo "---- fuse-t.log (tail) ----" >&2
-    tail -n 50 "$HOME/Library/Logs/fuse-t/fuse-t.log" >&2 || true
-  fi
+  cat "$LOG" >&2 || true
   exit 1
 fi
 
 echo "from-fuse-test" > "$MNT_DIR/NEW.TXT"
 grep -q "from-fuse-test" "$MNT_DIR/NEW.TXT"
+
+if [ "$OS" = "Windows" ]; then
+  echo "Testing unmount..."
+  $UNMOUNT_CMD "$MNT_TARGET" 2>&1
+  sleep 1
+  if [ -d "$MNT_DIR" ]; then
+    echo "WARNING: Mount directory still exists after unmount"
+  else
+    echo "Unmount successful - directory removed"
+  fi
+fi
 
 SUCCESS=1
 echo "PASS: fat12mount FUSE integration test"

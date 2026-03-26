@@ -48,6 +48,8 @@ typedef struct {
     Fat12 fs;
     pthread_mutex_t lock;
     char mountpoint[MAX_PATH];
+    char image_path[MAX_PATH];
+    int partition;
 } Fat12Ctx;
 
 static uint16_t fat12_fat_get(const Fat12 *fs, uint16_t cluster)
@@ -384,6 +386,9 @@ static int vfs_winfs_init(VfsContext *ctx, const char *image,
     Fat12Ctx *fctx = (Fat12Ctx *)ctx->platform_data;
     strncpy(fctx->mountpoint, mountpoint, MAX_PATH - 1);
     fctx->mountpoint[MAX_PATH - 1] = '\0';
+    strncpy(fctx->image_path, image, MAX_PATH - 1);
+    fctx->image_path[MAX_PATH - 1] = '\0';
+    fctx->partition = partition;
 
     uint64_t offset;
     int rc = fat12_parse_partition_offset(image, partition, &offset);
@@ -412,14 +417,76 @@ static int vfs_winfs_main_loop(VfsContext *ctx, int argc, char *argv[])
 {
     Fat12Ctx *fctx = (Fat12Ctx *)ctx->platform_data;
 
+    int foreground = 0;
+    for (int i = 1; i < argc; ++i) {
+        if (strcmp(argv[i], "-f") == 0) {
+            foreground = 1;
+            break;
+        }
+    }
+
+#if defined(_WIN32)
+    if (!foreground) {
+        STARTUPINFO si = {0};
+        si.cb = sizeof(si);
+        si.dwFlags = STARTF_USESHOWWINDOW;
+        si.wShowWindow = SW_HIDE;
+        PROCESS_INFORMATION pi = {0};
+        char cmdline[1024];
+        snprintf(cmdline, sizeof(cmdline), "\"%s\" --image \"%s\" --mount \"%s\" -f",
+                 argv[0], fctx->image_path, fctx->mountpoint);
+        if (fctx->partition > 0) {
+            char part[16];
+            snprintf(part, sizeof(part), " --partition %d", fctx->partition);
+            strncat(cmdline, part, sizeof(cmdline) - strlen(cmdline) - 1);
+        }
+        if (!CreateProcess(NULL, cmdline, NULL, NULL, FALSE, 
+                          CREATE_NEW_CONSOLE, 
+                          NULL, NULL, &si, &pi)) {
+            fprintf(stderr, "Failed to spawn mount process: %lu\n", GetLastError());
+        } else {
+            CloseHandle(pi.hProcess);
+            CloseHandle(pi.hThread);
+        }
+        return 0;
+    }
+#endif
+
     char **fuse_argv = (char **)calloc((size_t)argc + 8, sizeof(char *));
     if (!fuse_argv)
         return 1;
 
+    // Convert mountpoint to Windows absolute path
+    char win_mountpoint[MAX_PATH];
+    if (fctx->mountpoint[0] == '/' || (fctx->mountpoint[0] == '.' && fctx->mountpoint[1] == '/')) {
+        // Relative path - get absolute
+        char cwd[MAX_PATH];
+        if (GetCurrentDirectoryA(sizeof(cwd), cwd)) {
+            if (fctx->mountpoint[0] == '.') {
+                snprintf(win_mountpoint, sizeof(win_mountpoint), "%s%s", cwd, fctx->mountpoint + 1);
+            } else {
+                // Unix-style absolute path
+                snprintf(win_mountpoint, sizeof(win_mountpoint), "%s%s", cwd, fctx->mountpoint);
+            }
+            // Convert forward slashes to backslashes
+            for (char *p = win_mountpoint; *p; ++p) {
+                if (*p == '/') *p = '\\';
+            }
+        } else {
+            strncpy(win_mountpoint, fctx->mountpoint, MAX_PATH - 1);
+            win_mountpoint[MAX_PATH - 1] = '\0';
+        }
+    } else {
+        strncpy(win_mountpoint, fctx->mountpoint, MAX_PATH - 1);
+        win_mountpoint[MAX_PATH - 1] = '\0';
+    }
+
     int fuse_argc = 0;
     fuse_argv[fuse_argc++] = strdup(argv[0]);
-    fuse_argv[fuse_argc++] = strdup(fctx->mountpoint);
+    fuse_argv[fuse_argc++] = strdup(win_mountpoint);
 
+    fuse_argv[fuse_argc++] = strdup("-i");
+    fuse_argv[fuse_argc++] = strdup("-f");
     fuse_argv[fuse_argc++] = strdup("-o");
     fuse_argv[fuse_argc++] = strdup("uid=-1,gid=-1,umask=0");
 
@@ -434,6 +501,9 @@ static int vfs_winfs_main_loop(VfsContext *ctx, int argc, char *argv[])
         }
         if (strcmp(argv[i], "--partition") == 0 && i + 1 < argc) {
             ++i;
+            continue;
+        }
+        if (strcmp(argv[i], "-f") == 0) {
             continue;
         }
         fuse_argv[fuse_argc] = strdup(argv[i]);
@@ -460,7 +530,16 @@ static int vfs_winfs_main_loop(VfsContext *ctx, int argc, char *argv[])
 static int vfs_winfs_unmount(const char *mountpoint)
 {
     fuse_unmount(mountpoint, NULL);
-    vfs_info("Successfully requested unmount of '%s'\n", mountpoint);
+#if defined(_WIN32)
+    Sleep(500);
+    if (RemoveDirectoryA(mountpoint)) {
+        vfs_info("Unmounted and removed '%s'\n", mountpoint);
+    } else {
+        vfs_info("Unmounted '%s' (directory may not be empty or already removed)\n", mountpoint);
+    }
+#else
+    vfs_info("Successfully unmounted '%s'\n", mountpoint);
+#endif
     return 0;
 }
 

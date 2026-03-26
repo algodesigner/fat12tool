@@ -20,6 +20,7 @@ docs/
 mnt/
 .tmp/
 fat12-fuse-mnt-*
+fat12-fuse-test-*
 fat12-launcher-test-*
 
 # Disk images (excluding samples)

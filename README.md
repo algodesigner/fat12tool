@@ -128,11 +128,16 @@ fat12:/> exit
 
 ## Using `fat12mount`
 
+The mount point directory is created automatically (Windows) or must be created first (Linux/macOS). On all platforms, the directory is automatically removed after unmount.
+
 ### Mount a partition image directly
 
 ```sh
+# Windows: directory is created automatically
+# Linux/macOS: create directory first
 mkdir -p ./mnt
-./fat12mount --image sample-fat12-p1.img --mount ./mnt -f
+
+./fat12mount --image sample-fat12-p1.img --mount ./mnt
 ```
 
 In another shell:
@@ -147,7 +152,7 @@ echo "hello" > ./mnt/NEW.TXT
 
 ```sh
 mkdir -p ./mnt
-./fat12mount --image sample-fat12-2part.img --partition 1 --mount ./mnt -f
+./fat12mount --image sample-fat12-2part.img --partition 1 --mount ./mnt
 ```
 
 Use `--partition 2` for the second partition.

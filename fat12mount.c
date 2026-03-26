@@ -14,10 +14,15 @@
 
 #include "vfs_ops.h"
 
+#if defined(_WIN32)
+#include <windows.h>
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <dirent.h>
 
 int vfs_parse_args(int argc, char *argv[],
                    char **image, char **mountpoint, 
@@ -71,9 +76,9 @@ void vfs_usage(const char *argv0)
             "  --unmount, -u     Unmount the specified directory\n");
     fprintf(stderr, "  --help, -h        Show this help message\n\n");
     fprintf(stderr, "Examples:\n");
-    fprintf(stderr, "  %s --image disk.img --mount ./mnt -f\n", argv0);
+    fprintf(stderr, "  %s --image disk.img --mount ./mnt\n", argv0);
     fprintf(stderr,
-            "  %s --image disk.img --partition 1 --mount ./mnt -f\n",
+            "  %s --image disk.img --partition 1 --mount ./mnt\n",
             argv0);
     fprintf(stderr, "  %s -u ./mnt\n", argv0);
 }
@@ -91,7 +96,31 @@ int main(int argc, char *argv[])
 {
     char *image = NULL, *mountpoint = NULL;
     int partition = 0, unmount_flag = 0;
-    
+
+#if defined(_WIN32)
+    {
+        HMODULE h = LoadLibrary("winfsp-x64.dll");
+        if (!h) {
+            char dll_path[MAX_PATH];
+            GetModuleFileNameA(NULL, dll_path, sizeof(dll_path));
+            char *lastbackslash = strrchr(dll_path, '\\');
+            if (lastbackslash) {
+                *lastbackslash = '\0';
+                strncat(dll_path, "\\winfsp-x64.dll", sizeof(dll_path) - strlen(dll_path) - 1);
+                h = LoadLibraryA(dll_path);
+            }
+        }
+        if (!h) {
+            fprintf(stderr, "Error: WinFSP DLL not found.\n\n");
+            fprintf(stderr, "WinFSP is required to mount FAT12 images on Windows.\n");
+            fprintf(stderr, "Please install WinFSP from https://winfsp.dev/ or via:\n");
+            fprintf(stderr, "    winget install WinFsp\n\n");
+            fprintf(stderr, "After installation, ensure WinFSP bin directory is in your PATH.\n");
+            return 1;
+        }
+    }
+#endif
+
     if (vfs_parse_args(argc, argv, &image, &mountpoint, 
                        &partition, &unmount_flag) != 0) {
         vfs_usage(argv[0]);
@@ -136,12 +165,31 @@ int main(int argc, char *argv[])
     // On Windows with WinFSP, mountpoint can be:
     // 1. A drive letter like "X:" (no check needed)
     // 2. A folder path (WinFSP will create it if it doesn't exist, so we allow non-existent paths)
-    // Only check if it exists and is not a directory
+    // Only check if it exists and is not a directory, and ensure it's empty
     if (!(strlen(mountpoint) == 2 && mountpoint[1] == ':')) {
         struct stat st;
-        if (stat(mountpoint, &st) == 0 && !S_ISDIR(st.st_mode)) {
-            vfs_error("Mount point '%s' exists but is not a directory.\n", mountpoint);
-            return 1;
+        if (stat(mountpoint, &st) == 0) {
+            if (!S_ISDIR(st.st_mode)) {
+                vfs_error("Mount point '%s' exists but is not a directory.\n", mountpoint);
+                return 1;
+            }
+            // Check if directory is empty (only . and .. entries)
+            DIR *d = opendir(mountpoint);
+            if (d) {
+                int has_entries = 0;
+                struct dirent *entry;
+                while ((entry = readdir(d)) != NULL) {
+                    if (strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0) {
+                        has_entries = 1;
+                        break;
+                    }
+                }
+                closedir(d);
+                if (has_entries) {
+                    vfs_error("Mount point '%s' is not empty. Use an empty directory.\n", mountpoint);
+                    return 1;
+                }
+            }
         }
     }
 #else
