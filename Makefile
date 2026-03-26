@@ -62,7 +62,7 @@ endif
 
 all: fat12tool fat12mount-optional fat12mount.exe
 
-test: fat12tool test-core test-cli test-fuse
+test: fat12tool test-core test-unit test-cli test-fuse
 
 deps:
 	./scripts/install_deps.sh
@@ -112,8 +112,14 @@ endif
 test-core: fat12_core_test
 	./fat12_core_test sample-fat12-p1.img sample-fat12-2part.img
 
-fat12_core_test: tests/test_fat12_core.c $(CORE_SRCS) $(CORE_HDRS)
-	$(CC) $(CFLAGS) -o $@ tests/test_fat12_core.c $(CORE_SRCS)
+test-unit: fat12_core_unit_test
+	./fat12_core_unit_test
+
+fat12_core_test: tests/test_fat12_core.c $(CORE_SRCS) $(CORE_HDRS) tests/utils.c tests/utils.h
+	$(CC) $(CFLAGS) -o $@ tests/test_fat12_core.c tests/utils.c $(CORE_SRCS)
+
+fat12_core_unit_test: tests/test_fat12_core_unit.c $(CORE_HDRS) tests/utils.c tests/utils.h
+	$(CC) $(CFLAGS) -DFAT12_INTERNAL -o $@ tests/test_fat12_core_unit.c tests/utils.c
 
 test-cli: fat12tool
 	./tests/test_cli.sh
@@ -132,5 +138,5 @@ ifeq ($(HAVE_FUSE)$(HAVE_WINFSP),00)
 endif
 
 clean:
-	rm -f fat12tool fat12mount fat12mount.exe fat12_core.o fat12_core_test
+	rm -f fat12tool fat12mount fat12mount.exe fat12_core.o fat12_core_test fat12_core_unit_test
 	rm -f vfs_fuse.o vfs_winfsp.o

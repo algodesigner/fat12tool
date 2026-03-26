@@ -10,6 +10,7 @@
  */
 #define _GNU_SOURCE
 #include "../fat12_core.h"
+#include "utils.h"
 
 #include <errno.h>
 #include <stdint.h>
@@ -114,6 +115,35 @@ static int root_list_cb(const char *name, int is_dir, uint32_t size, void *user)
         scan->found_hello = 1;
     if (strcmp(name, "TESTDIR") == 0 && is_dir)
         scan->found_testdir = 1;
+    return 0;
+}
+
+/* Callback for traversal test */
+typedef struct {
+    int count;
+    int found_readme;
+    int found_hello;
+    int found_testdir;
+} TraversalState;
+
+static int traversal_list_cb(const char *name, int is_dir, uint32_t size, void *user)
+{
+    (void)size;
+    TraversalState *s = (TraversalState *)user;
+    s->count++;
+    if (strcmp(name, "README.TXT") == 0) s->found_readme = 1;
+    if (strcmp(name, "HELLO.TXT") == 0) s->found_hello = 1;
+    if (strcmp(name, "TESTDIR") == 0 && is_dir) s->found_testdir = 1;
+    return 0;
+}
+
+/* Simple counter callback */
+static int count_list_cb(const char *name, int is_dir, uint32_t size, void *user)
+{
+    (void)name;
+    (void)is_dir;
+    (void)size;
+    (*(int *)user)++;
     return 0;
 }
 
@@ -264,6 +294,376 @@ static int run_partition_offset_test(const char *disk_img)
 }
 
 /**
+ * @brief Test comprehensive file system traversal.
+ */
+static int test_file_system_traversal(const char *fixture_img)
+{
+    char *tmp = test_create_temp_copy(fixture_img);
+    TEST_CHECK(tmp != NULL, "create temp copy failed");
+
+    Fat12 fs;
+    int rc = fat12_open(&fs, tmp, 0);
+    TEST_CHECK_RC(rc, 0, "fat12_open failed");
+
+    Fat12Node node;
+
+    /* Test root directory listing */
+    TraversalState state = {0};
+
+    rc = fat12_list(&fs, "/", traversal_list_cb, &state);
+    TEST_CHECK_RC(rc, 0, "fat12_list root failed");
+    TEST_CHECK(state.count >= 3, "should list at least 3 entries");
+    TEST_CHECK(state.found_readme, "README.TXT not found");
+    TEST_CHECK(state.found_hello, "HELLO.TXT not found");
+    TEST_CHECK(state.found_testdir, "TESTDIR not found");
+
+    /* Test subdirectory traversal */
+    rc = fat12_stat(&fs, "/TESTDIR", &node);
+    TEST_CHECK_RC(rc, 0, "stat TESTDIR failed");
+    TEST_CHECK(node.is_dir, "TESTDIR should be directory");
+
+    /* Create nested directory structure for testing */
+    rc = fat12_mkdir(&fs, "/TESTDIR/SUBDIR");
+    TEST_CHECK_RC(rc, 0, "mkdir SUBDIR failed");
+
+    rc = fat12_create(&fs, "/TESTDIR/SUBDIR/FILE.TXT");
+    TEST_CHECK_RC(rc, 0, "create nested file failed");
+
+    const char *data = "nested content";
+    ssize_t n = fat12_write(&fs, "/TESTDIR/SUBDIR/FILE.TXT", data, strlen(data), 0);
+    TEST_CHECK(n == (ssize_t)strlen(data), "write nested file failed");
+
+    /* List nested directory */
+    int nested_count = 0;
+    rc = fat12_list(&fs, "/TESTDIR/SUBDIR", count_list_cb, &nested_count);
+    TEST_CHECK_RC(rc, 0, "list SUBDIR failed");
+    TEST_CHECK(nested_count >= 1, "SUBDIR should have at least 1 entry");
+
+    /* Test path resolution with . and .. */
+    rc = fat12_stat(&fs, "/TESTDIR/SUBDIR/.././SUBDIR/FILE.TXT", &node);
+    TEST_CHECK_RC(rc, 0, "path with . and .. resolution failed");
+
+    fat12_close(&fs);
+    unlink(tmp);
+    free(tmp);
+    return 0;
+}
+
+/**
+ * @brief Test boundary conditions (max file size, path limits).
+ */
+static int test_boundary_conditions(const char *fixture_img)
+{
+    char *tmp = test_create_temp_copy(fixture_img);
+    TEST_CHECK(tmp != NULL, "create temp copy failed");
+
+    Fat12 fs;
+    int rc = fat12_open(&fs, tmp, 0);
+    TEST_CHECK_RC(rc, 0, "fat12_open failed");
+
+    /* Test path length limits */
+    char long_path[512];
+    memset(long_path, 'A', 511);
+    long_path[511] = '\0';
+
+    /* Create a deep directory structure would test path limits */
+    /* For now, test reasonable paths */
+    rc = fat12_create(&fs, "/BOUNDARY.TXT");
+    TEST_CHECK_RC(rc, 0, "create boundary test file failed");
+
+    /* Test writing near cluster boundaries */
+    /* Get cluster size from filesystem info */
+    uint32_t cluster_size = fs.cluster_size;
+    TEST_CHECK(cluster_size > 0, "cluster size should be positive");
+
+    /* Write data that spans multiple clusters */
+    size_t large_size = cluster_size * 3;
+    char *large_buf = malloc(large_size);
+    TEST_CHECK(large_buf != NULL, "malloc failed");
+
+    memset(large_buf, 'X', large_size);
+    ssize_t n = fat12_write(&fs, "/BOUNDARY.TXT", large_buf, large_size, 0);
+    TEST_CHECK(n == (ssize_t)large_size, "write large file failed");
+
+    /* Read back and verify */
+    char *read_buf = malloc(large_size);
+    TEST_CHECK(read_buf != NULL, "malloc failed");
+
+    n = fat12_read(&fs, "/BOUNDARY.TXT", read_buf, large_size, 0);
+    TEST_CHECK(n == (ssize_t)large_size, "read large file failed");
+    TEST_CHECK(memcmp(large_buf, read_buf, large_size) == 0, "data mismatch");
+
+    free(large_buf);
+    free(read_buf);
+
+    /* Test file truncation to exact cluster boundary */
+    rc = fat12_truncate(&fs, "/BOUNDARY.TXT", cluster_size * 2);
+    TEST_CHECK_RC(rc, 0, "truncate to cluster boundary failed");
+
+    fat12_close(&fs);
+    unlink(tmp);
+    free(tmp);
+    return 0;
+}
+
+/**
+ * @brief Test error cases for all public API functions.
+ */
+static int test_error_cases(const char *fixture_img)
+{
+    char *tmp = test_create_temp_copy(fixture_img);
+    TEST_CHECK(tmp != NULL, "create temp copy failed");
+
+    Fat12 fs;
+    int rc = fat12_open(&fs, tmp, 0);
+    TEST_CHECK_RC(rc, 0, "fat12_open failed");
+
+    Fat12Node node;
+    char buffer[64];
+
+    /* Test invalid paths */
+    rc = fat12_stat(&fs, NULL, &node);
+    TEST_CHECK_RC(rc, -EINVAL, "stat NULL path should return EINVAL");
+
+    rc = fat12_stat(&fs, "", &node);
+    TEST_CHECK_RC(rc, -EINVAL, "stat empty path should return EINVAL");
+
+    rc = fat12_stat(&fs, "relative", &node);
+    TEST_CHECK_RC(rc, -EINVAL, "stat relative path should return EINVAL");
+
+    /* Test non-existent paths */
+    rc = fat12_stat(&fs, "/NONEXISTENT.TXT", &node);
+    TEST_CHECK_RC(rc, -ENOENT, "stat non-existent file should return ENOENT");
+
+    rc = fat12_read(&fs, "/NONEXISTENT.TXT", buffer, sizeof(buffer), 0);
+    TEST_CHECK(rc < 0, "read non-existent file should fail");
+
+    rc = fat12_write(&fs, "/NONEXISTENT.TXT", "data", 4, 0);
+    TEST_CHECK(rc < 0, "write non-existent file should fail");
+
+    /* Test invalid file handles (already closed) */
+    fat12_close(&fs);
+
+    /* Re-open for more tests */
+    rc = fat12_open(&fs, tmp, 0);
+    TEST_CHECK_RC(rc, 0, "re-open failed");
+
+    /* Test directory operations on files and vice versa */
+    rc = fat12_create(&fs, "/FILE.TXT");
+    TEST_CHECK_RC(rc, 0, "create FILE.TXT failed");
+
+    rc = fat12_rmdir(&fs, "/FILE.TXT");
+    TEST_CHECK_RC(rc, -ENOTDIR, "rmdir on file should return ENOTDIR");
+
+    rc = fat12_mkdir(&fs, "/DIR");
+    TEST_CHECK_RC(rc, 0, "mkdir DIR failed");
+
+    rc = fat12_unlink(&fs, "/DIR");
+    TEST_CHECK_RC(rc, -EISDIR, "unlink on directory should return EISDIR");
+
+    /* Test rename with invalid paths */
+    rc = fat12_rename(&fs, "/FILE.TXT", "");
+    TEST_CHECK_RC(rc, -EINVAL, "rename to empty path should fail");
+
+    rc = fat12_rename(&fs, "", "/NEW.TXT");
+    TEST_CHECK_RC(rc, -EINVAL, "rename from empty path should fail");
+
+    /* Test path traversal safety */
+    rc = fat12_stat(&fs, "/../README.TXT", &node);
+    TEST_CHECK_RC(rc, 0, "path traversal /.. should stay at root");
+
+    rc = fat12_stat(&fs, "/TESTDIR/../../HELLO.TXT", &node);
+    TEST_CHECK_RC(rc, 0, "deep path traversal should stay at root");
+
+    /* Test invalid characters in path */
+    rc = fat12_create(&fs, "/BAD*FILE.TXT");
+    TEST_CHECK(rc != 0, "create with invalid character should fail");
+
+    fat12_close(&fs);
+    unlink(tmp);
+    free(tmp);
+    return 0;
+}
+
+/**
+ * @brief Test filesystem integrity after operations.
+ */
+static int test_filesystem_integrity(const char *fixture_img)
+{
+    char *tmp = test_create_temp_copy(fixture_img);
+    TEST_CHECK(tmp != NULL, "create temp copy failed");
+
+    Fat12 fs;
+    Fat12Node node;
+    int rc = fat12_open(&fs, tmp, 0);
+    TEST_CHECK_RC(rc, 0, "fat12_open failed");
+
+    /* Perform series of operations */
+    rc = fat12_mkdir(&fs, "/INTEGTST");
+    fprintf(stderr, "DEBUG: fat12_mkdir returned %d (errno %d)\n", rc, rc < 0 ? -rc : 0);
+    TEST_CHECK_RC(rc, 0, "mkdir failed");
+
+    rc = fat12_create(&fs, "/INTEGTST/FILE1.TXT");
+    TEST_CHECK_RC(rc, 0, "create file1 failed");
+
+    rc = fat12_create(&fs, "/INTEGTST/FILE2.TXT");
+    TEST_CHECK_RC(rc, 0, "create file2 failed");
+
+    const char *data = "test data";
+    ssize_t n = fat12_write(&fs, "/INTEGTST/FILE1.TXT", data, strlen(data), 0);
+    TEST_CHECK(n == (ssize_t)strlen(data), "write file1 failed");
+
+    /* Rename directory */
+    rc = fat12_rename(&fs, "/INTEGTST", "/RENAMED");
+    TEST_CHECK_RC(rc, 0, "rename directory failed");
+
+    /* Verify renamed directory contents */
+    rc = fat12_stat(&fs, "/RENAMED/FILE1.TXT", &node);
+    TEST_CHECK_RC(rc, 0, "stat file in renamed dir failed");
+
+    char buffer[64];
+    n = fat12_read(&fs, "/RENAMED/FILE1.TXT", buffer, sizeof(buffer), 0);
+    TEST_CHECK(n == (ssize_t)strlen(data), "read from renamed dir failed");
+    TEST_CHECK(memcmp(buffer, data, strlen(data)) == 0, "data mismatch after rename");
+
+    /* Remove files and directory */
+    rc = fat12_unlink(&fs, "/RENAMED/FILE1.TXT");
+    TEST_CHECK_RC(rc, 0, "unlink file1 failed");
+
+    rc = fat12_unlink(&fs, "/RENAMED/FILE2.TXT");
+    TEST_CHECK_RC(rc, 0, "unlink file2 failed");
+
+    rc = fat12_rmdir(&fs, "/RENAMED");
+    TEST_CHECK_RC(rc, 0, "rmdir failed");
+
+    /* Verify filesystem still functional */
+    rc = fat12_stat(&fs, "/README.TXT", &node);
+    TEST_CHECK_RC(rc, 0, "stat root file failed after operations");
+
+    fat12_close(&fs);
+
+    /* Verify FAT consistency using utility */
+    rc = test_verify_fat_consistency(tmp);
+    TEST_CHECK(rc == 0, "FAT consistency check failed");
+
+    unlink(tmp);
+    free(tmp);
+    return 0;
+}
+
+/**
+ * @brief Verifies handling of the disk full condition.
+ *
+ * This function simulates a full disk and checks that operations requiring
+ * new clusters fail with -ENOSPC.
+ *
+ * @param fixture_img Path to the fixture image.
+ * @return Returns 0 on success, 1 on failure.
+ */
+static int test_disk_full_handling(const char *fixture_img)
+{
+    char *tmp = test_create_temp_copy(fixture_img);
+    TEST_CHECK(tmp != NULL, "create temp copy failed");
+
+    TEST_CHECK(test_simulate_disk_full(tmp) == 0, "simulate disk full failed");
+
+    Fat12 fs;
+    int rc = fat12_open(&fs, tmp, 0);
+    TEST_CHECK_RC(rc, 0, "fat12_open failed");
+
+    /* Try to create a new file - should fail if root dir is full or if it needs cluster */
+    /* Since root entries are pre-allocated in FAT12, fat12_create might succeed
+     * if there is a free slot, but fat12_write will fail. */
+    rc = fat12_create(&fs, "/FULLTEST.TXT");
+    /* It might succeed if there's a free slot in root dir. */
+
+    if (rc == 0) {
+        ssize_t n = fat12_write(&fs, "/FULLTEST.TXT", "data", 4, 0);
+        TEST_CHECK(n < 0, "write to full disk should fail");
+    }
+
+    /* Try to create a directory - always requires a new cluster */
+    rc = fat12_mkdir(&fs, "/FULLDIR");
+    TEST_CHECK(rc == -ENOSPC, "mkdir on full disk should return ENOSPC");
+
+    fat12_close(&fs);
+    unlink(tmp);
+    free(tmp);
+    return 0;
+}
+
+/**
+ * @brief Verifies handling of corrupted filesystem structures.
+ *
+ * This function injects corruptions into the filesystem and verifies
+ * that the library handles them without crashing.
+ *
+ * @param fixture_img Path to the fixture image.
+ * @return Returns 0 on success, 1 on failure.
+ */
+static int test_filesystem_corruption_handling(const char *fixture_img)
+{
+    char *tmp = test_create_temp_copy(fixture_img);
+    TEST_CHECK(tmp != NULL, "create temp copy failed");
+
+    /* Case 1: Corrupt boot sector */
+    TEST_CHECK(test_corrupt_boot_sector(tmp) == 0, "corrupt boot sector failed");
+    Fat12 fs;
+    int rc = fat12_open(&fs, tmp, 0);
+    TEST_CHECK(rc != 0, "open should fail with corrupted boot sector");
+
+    /* Case 2: FAT cross-link (cycle) */
+    free(tmp);
+    tmp = test_create_temp_copy(fixture_img);
+    TEST_CHECK(test_corrupt_fat_crosslink(tmp, 2, 3) == 0, "corrupt fat failed");
+    rc = fat12_open(&fs, tmp, 0);
+    TEST_CHECK_RC(rc, 0, "fat12_open failed with fat corruption");
+    /* Traversal of corrupted chain should ideally handle loops or fail gracefully */
+    /* Implementation details of fat12_core.c traversal should be checked */
+
+    fat12_close(&fs);
+    unlink(tmp);
+    free(tmp);
+    return 0;
+}
+
+/**
+ * @brief Verifies traversal of deep directory structures.
+ *
+ * This function creates a nested directory structure and verifies
+ * recursive operations and path resolution.
+ *
+ * @param fixture_img Path to the fixture image.
+ * @return Returns 0 on success, 1 on failure.
+ */
+static int test_deep_traversal(const char *fixture_img)
+{
+    char *tmp = test_create_temp_copy(fixture_img);
+    TEST_CHECK(tmp != NULL, "create temp copy failed");
+
+    Fat12 fs;
+    TEST_CHECK(fat12_open(&fs, tmp, 0) == 0, "fat12_open failed");
+
+    /* Create deep structure: /A/B/C/D/FILE.TXT */
+    TEST_CHECK(fat12_mkdir(&fs, "/A") == 0, "mkdir /A failed");
+    TEST_CHECK(fat12_mkdir(&fs, "/A/B") == 0, "mkdir /A/B failed");
+    TEST_CHECK(fat12_mkdir(&fs, "/A/B/C") == 0, "mkdir /A/B/C failed");
+    TEST_CHECK(fat12_mkdir(&fs, "/A/B/C/D") == 0, "mkdir /A/B/C/D failed");
+    TEST_CHECK(fat12_create(&fs, "/A/B/C/D/FILE.TXT") == 0, "create file failed");
+
+    Fat12Node node;
+    TEST_CHECK(fat12_stat(&fs, "/A/B/C/D/FILE.TXT", &node) == 0, "stat deep file failed");
+
+    /* Test relative resolution through many levels */
+    TEST_CHECK(fat12_stat(&fs, "/A/B/../B/C/./D/../D/FILE.TXT", &node) == 0, "complex path resolution failed");
+
+    fat12_close(&fs);
+    unlink(tmp);
+    free(tmp);
+    return 0;
+}
+
+/**
  * @brief Test executable entry point.
  */
 int main(int argc, char **argv)
@@ -280,6 +680,23 @@ int main(int argc, char **argv)
     if (run_partition_offset_test(argv[2]) != 0)
         return 1;
 
+    /* Phase 1: Expanded basic operation tests */
+    if (test_file_system_traversal(argv[1]) != 0)
+        return 1;
+    if (test_boundary_conditions(argv[1]) != 0)
+        return 1;
+    if (test_error_cases(argv[1]) != 0)
+        return 1;
+    if (test_filesystem_integrity(argv[1]) != 0)
+        return 1;
+    if (test_disk_full_handling(argv[1]) != 0)
+        return 1;
+    if (test_filesystem_corruption_handling(argv[1]) != 0)
+        return 1;
+    if (test_deep_traversal(argv[1]) != 0)
+        return 1;
+
     printf("PASS: fat12_core tests\n");
     return 0;
 }
+

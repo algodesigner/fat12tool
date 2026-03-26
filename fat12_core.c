@@ -939,6 +939,9 @@ void fat12_close(Fat12 *fs)
  */
 int fat12_stat(Fat12 *fs, const char *path, Fat12Node *out)
 {
+    if (!path || path[0] != '/')
+        return -EINVAL;
+
     EntryRef r;
     if (resolve_abs_path(fs, path, &r, NULL, NULL, 0) != 0 || !r.found)
         return -ENOENT;
@@ -964,6 +967,9 @@ int fat12_stat(Fat12 *fs, const char *path, Fat12Node *out)
  */
 int fat12_list(Fat12 *fs, const char *path, fat12_list_cb cb, void *user)
 {
+    if (!path || path[0] != '/')
+        return -EINVAL;
+
     EntryRef r;
     if (resolve_abs_path(fs, path, &r, NULL, NULL, 0) != 0 || !r.found)
         return -ENOENT;
@@ -1038,6 +1044,9 @@ int fat12_list(Fat12 *fs, const char *path, fat12_list_cb cb, void *user)
 ssize_t fat12_read(
         Fat12 *fs, const char *path, void *buf, size_t size, off_t offset)
 {
+    if (!path || path[0] != '/')
+        return -EINVAL;
+
     EntryRef r;
     if (resolve_abs_path(fs, path, &r, NULL, NULL, 0) != 0 || !r.found)
         return -ENOENT;
@@ -1100,6 +1109,9 @@ ssize_t fat12_read(
 ssize_t fat12_write(
         Fat12 *fs, const char *path, const void *buf, size_t size, off_t offset)
 {
+    if (!path || path[0] != '/')
+        return -EINVAL;
+
     EntryRef r;
     if (resolve_abs_path(fs, path, &r, NULL, NULL, 0) != 0 || !r.found)
         return -ENOENT;
@@ -1166,6 +1178,9 @@ ssize_t fat12_write(
  */
 int fat12_create(Fat12 *fs, const char *path)
 {
+    if (!path || path[0] != '/')
+        return -EINVAL;
+
     EntryRef r;
     uint16_t parent;
     char leaf[256];
@@ -1233,6 +1248,9 @@ static int mkdir_init(Fat12 *fs, uint16_t cluster, uint16_t parent_cluster)
  */
 int fat12_mkdir(Fat12 *fs, const char *path)
 {
+    if (!path || path[0] != '/')
+        return -EINVAL;
+
     EntryRef r;
     uint16_t parent;
     char leaf[256];
@@ -1260,6 +1278,9 @@ int fat12_mkdir(Fat12 *fs, const char *path)
  */
 int fat12_unlink(Fat12 *fs, const char *path)
 {
+    if (!path || path[0] != '/')
+        return -EINVAL;
+
     EntryRef r;
     if (resolve_abs_path(fs, path, &r, NULL, NULL, 0) != 0 || !r.found)
         return -ENOENT;
@@ -1282,6 +1303,9 @@ int fat12_unlink(Fat12 *fs, const char *path)
  */
 int fat12_rmdir(Fat12 *fs, const char *path)
 {
+    if (!path || path[0] != '/')
+        return -EINVAL;
+
     if (strcmp(path, "/") == 0)
         return -EBUSY;
     EntryRef r;
@@ -1307,6 +1331,9 @@ int fat12_rmdir(Fat12 *fs, const char *path)
  */
 int fat12_truncate(Fat12 *fs, const char *path, off_t size)
 {
+    if (!path || path[0] != '/')
+        return -EINVAL;
+
     if (size < 0)
         return -EINVAL;
     EntryRef r;
@@ -1364,6 +1391,9 @@ int fat12_truncate(Fat12 *fs, const char *path, off_t size)
  */
 int fat12_utimens_now(Fat12 *fs, const char *path)
 {
+    if (!path || path[0] != '/')
+        return -EINVAL;
+
     EntryRef r;
     if (resolve_abs_path(fs, path, &r, NULL, NULL, 0) != 0 || !r.found)
         return -ENOENT;
@@ -1383,6 +1413,9 @@ int fat12_utimens_now(Fat12 *fs, const char *path)
  */
 int fat12_rename(Fat12 *fs, const char *from, const char *to)
 {
+    if (!from || from[0] != '/' || !to || to[0] != '/')
+        return -EINVAL;
+
     EntryRef src_ref;
     if (resolve_abs_path(fs, from, &src_ref, NULL, NULL, 0) != 0 ||
             !src_ref.found)
