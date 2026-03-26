@@ -4,20 +4,25 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-CC ?= cc
+CC ?= gcc
 CFLAGS ?= -std=c11 -Wall -Wextra -Wpedantic -O2
 
 CORE_SRCS = fat12_core.c
 CORE_HDRS = fat12_core.h
 
 UNAME_S := $(shell uname -s)
+ifeq ($(OS),Windows_NT)
+  UNAME_S := Windows
+endif
 
 FUSE3_CFLAGS := $(shell pkg-config --cflags fuse3 2>/dev/null)
 FUSE3_LIBS   := $(shell pkg-config --libs fuse3 2>/dev/null)
 
 FUSE_T_INC := $(firstword $(wildcard /usr/local/include/fuse/fuse.h))
 FUSE_T_LIB := $(firstword $(wildcard /usr/local/lib/libfuse-t.dylib) $(wildcard /usr/local/lib/libfuse-t.a))
+
 ifeq ($(UNAME_S),Darwin)
+  CC = gcc
   ifneq ($(strip $(FUSE_T_INC)),)
     ifneq ($(strip $(FUSE_T_LIB)),)
       FUSE_CFLAGS := -I/usr/local/include/fuse
@@ -30,17 +35,32 @@ ifeq ($(UNAME_S),Darwin)
   else
     HAVE_FUSE := 0
   endif
+  HAVE_WINFSP := 0
+else ifeq ($(UNAME_S),Windows)
+  CC = gcc
+  WINFSP_DIR ?= C:/Program Files (x86)/WinFSP
+  WINFSP_INC := "$(WINFSP_DIR)/inc"
+  WINFSP_BIN := "$(WINFSP_DIR)/bin"
+  # We use the DLL directly for linking to avoid lib format issues
+  WINFSP_LIBS := $(WINFSP_BIN)/winfsp-x64.dll
+  # Compatibility flags for WinFSP headers with GCC
+  WINFSP_CFLAGS := -I$(WINFSP_INC) -D_CRT_DECLARE_NONSTDC_NAMES -D_POSIX_THREAD_SAFE_FUNCTIONS \
+                   -Dstatic_assert=_Static_assert -D_ReadWriteBarrier=__sync_synchronize \
+                   -Wno-unknown-pragmas
+  HAVE_WINFSP := 1
+  HAVE_FUSE := 0
 else
-  ifeq ($(strip $(FUSE3_CFLAGS)),)
-    HAVE_FUSE := 0
-  else
+  ifneq ($(strip $(FUSE3_CFLAGS)),)
     FUSE_CFLAGS := $(FUSE3_CFLAGS)
     FUSE_LIBS := $(FUSE3_LIBS)
     HAVE_FUSE := 1
+  else
+    HAVE_FUSE := 0
   endif
+  HAVE_WINFSP := 0
 endif
 
-all: fat12tool fat12mount-optional
+all: fat12tool fat12mount-optional fat12mount.exe
 
 test: fat12tool test-core test-cli test-fuse
 
@@ -68,11 +88,18 @@ docs:
 fat12tool: fat12tool.c $(CORE_SRCS) $(CORE_HDRS)
 	$(CC) $(CFLAGS) -o $@ fat12tool.c $(CORE_SRCS)
 
-fat12mount: fat12_fuse.c $(CORE_SRCS) $(CORE_HDRS)
+fat12mount: fat12mount.c vfs_ops.h vfs_fuse.c $(CORE_SRCS) $(CORE_HDRS)
 ifeq ($(HAVE_FUSE),1)
-	$(CC) $(CFLAGS) $(FUSE_CFLAGS) -o $@ fat12_fuse.c $(CORE_SRCS) $(FUSE_LIBS) $(FUSE_LDFLAGS) -lpthread
+	$(CC) $(CFLAGS) $(FUSE_CFLAGS) -o $@ fat12mount.c vfs_fuse.c $(CORE_SRCS) $(FUSE_LIBS) $(FUSE_LDFLAGS) -lpthread
 else
-	@echo "FUSE headers/libs not found; install FUSE-T (macOS) or libfuse3-dev (Linux) to build fat12mount."
+	@echo "Skipping fat12mount (FUSE not available in build environment)."
+endif
+
+fat12mount.exe: fat12mount.c vfs_ops.h vfs_winfsp.c $(CORE_SRCS) $(CORE_HDRS)
+ifeq ($(HAVE_WINFSP),1)
+	$(CC) $(CFLAGS) $(WINFSP_CFLAGS) -o $@ fat12mount.c vfs_winfsp.c $(CORE_SRCS) $(WINFSP_LIBS) -lbcrypt -lpthread
+else
+	@echo "Skipping fat12mount.exe (WinFSP not available in build environment)."
 endif
 
 fat12mount-optional:
@@ -91,8 +118,19 @@ fat12_core_test: tests/test_fat12_core.c $(CORE_SRCS) $(CORE_HDRS)
 test-cli: fat12tool
 	./tests/test_cli.sh
 
-test-fuse: fat12mount-optional
+test-fuse:
+ifneq ($(HAVE_FUSE),0)
+	$(MAKE) fat12mount
 	./tests/test_fuse_mount.sh
+endif
+ifneq ($(HAVE_WINFSP),0)
+	$(MAKE) fat12mount.exe
+	./tests/test_fuse_mount.sh
+endif
+ifeq ($(HAVE_FUSE)$(HAVE_WINFSP),00)
+	@echo "Skipping fat12mount (FUSE/WinFSP not available)."
+endif
 
 clean:
-	rm -f fat12tool fat12mount fat12_core.o fat12_core_test
+	rm -f fat12tool fat12mount fat12mount.exe fat12_core.o fat12_core_test
+	rm -f vfs_fuse.o vfs_winfsp.o

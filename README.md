@@ -1,15 +1,15 @@
-# FAT12 Toolkit (CLI + FUSE Mount)
+# FAT12 Toolkit (CLI + Filesystem Mount)
 
 This project provides two ways to work with FAT12 images:
 
 - `fat12tool`: interactive command shell for direct FAT12 read/write operations.
-- `fat12mount`: FUSE filesystem driver that mounts a FAT12 image to a regular directory so any app can use it.
+- `fat12mount`: filesystem driver that mounts a FAT12 image to a regular directory so any application can use it.
 
 The code is split into:
 
 - `fat12_core.c/.h`: portable FAT12 engine (allocation, directory operations, file IO).
 - `fat12tool.c`: interactive shell frontend.
-- `fat12_fuse.c`: FUSE frontend for Linux/macOS.
+- `fat12mount.c`, `vfs_ops.h`, `vfs_fuse.c`, `vfs_winfsp.c`: cross-platform mounting via FUSE (Linux/macOS) or WinFSP (Windows).
 
 ## Features
 
@@ -17,7 +17,8 @@ The code is split into:
 - Create/remove files and directories
 - Truncate files
 - Persist metadata updates (write/access timestamps)
-- Open FAT12 at offset `0` (partition image) or at MBR partition offset (`--partition N` in FUSE tool)
+- Open FAT12 at offset `0` (partition image) or at MBR partition offset (`--partition N`)
+- Cross-platform: works on Linux, macOS, and Windows
 
 ## Current Limitations
 
@@ -25,70 +26,52 @@ The code is split into:
 - 8.3 short filenames only (no long filename/LFN support)
 - No journaling/crash recovery
 - Root directory expansion is limited by FAT12 root entry table constraints
-- `rename` in FUSE is implemented as copy+unlink for files, and directories are currently not supported for rename
-
-## Repository Layout
-
-- `/Users/vlad/Documents/Playground/fat12_core.h`
-- `/Users/vlad/Documents/Playground/fat12_core.c`
-- `/Users/vlad/Documents/Playground/fat12tool.c`
-- `/Users/vlad/Documents/Playground/fat12_fuse.c`
-- `/Users/vlad/Documents/Playground/tests/test_fat12_core.c`
-- `/Users/vlad/Documents/Playground/tests/test_cli.sh`
-- `/Users/vlad/Documents/Playground/sample-fat12-p1.img`
-- `/Users/vlad/Documents/Playground/sample-fat12-p2.img`
-- `/Users/vlad/Documents/Playground/sample-fat12-2part.img`
+- `rename` in mounting mode is implemented as copy+unlink for files, and directories are currently not supported for rename
 
 ## Build
 
-From `/Users/vlad/Documents/Playground`:
+### Linux
 
 ```sh
 make
 ```
 
-What `make` does:
-
-- Always builds `fat12tool`
-- Builds `fat12mount` only when FUSE headers/libraries are available
-
-### FUSE dependencies
-
-Install prerequisites via script:
+Install FUSE dependencies if needed:
 
 ```sh
-./scripts/install_deps.sh
-```
-
-Include Doxygen as well:
-
-```sh
-./scripts/install_deps.sh --with-docs
-```
-
-Linux (Ubuntu/Debian):
-
-```sh
+# Ubuntu/Debian
 sudo apt-get update
 sudo apt-get install -y libfuse3-dev fuse3 pkg-config
-```
 
-Linux (Fedora):
-
-```sh
+# Fedora
 sudo dnf install -y fuse3-devel fuse3 pkgconf-pkg-config
 ```
 
-macOS:
+### macOS
+
+```sh
+make
+```
+
+Install FUSE-T:
 
 1. Install FUSE-T (Homebrew cask `macos-fuse-t/homebrew-cask/fuse-t`).
 2. Ensure FUSE headers are available (`/usr/local/include/fuse/fuse.h`) and `libfuse-t` is present (`/usr/local/lib/libfuse-t.dylib`).
 
-Then rebuild:
+### Windows (MinGW + WinFSP)
 
+1. Install WinFSP: `winget install WinFsp` or download from https://winfsp.dev/
+2. Install make via [Scoop](https://scoop.sh/):
 ```sh
-make clean
-make
+scoop install make
+```
+3. Install MinGW-w64 via Scoop:
+```sh
+scoop install mingw
+```
+4. Build:
+```sh
+make fat12mount.exe
 ```
 
 ## Creating a New Image
@@ -143,9 +126,9 @@ fat12:/> read /LOCAL.TXT ./copy.txt
 fat12:/> exit
 ```
 
-## Using `fat12mount` (FUSE)
+## Using `fat12mount`
 
-### 1) Mount a partition image directly
+### Mount a partition image directly
 
 ```sh
 mkdir -p ./mnt
@@ -160,21 +143,7 @@ cat ./mnt/README.TXT
 echo "hello" > ./mnt/NEW.TXT
 ```
 
-Unmount:
-
-Linux:
-
-```sh
-fusermount3 -u ./mnt
-```
-
-macOS:
-
-```sh
-umount ./mnt
-```
-
-### 2) Mount a partition inside an MBR disk image
+### Mount a partition inside an MBR disk image
 
 ```sh
 mkdir -p ./mnt
@@ -182,6 +151,12 @@ mkdir -p ./mnt
 ```
 
 Use `--partition 2` for the second partition.
+
+### Unmount
+
+```sh
+./fat12mount -u ./mnt
+```
 
 ## Test Suite
 
@@ -191,14 +166,10 @@ Run full tests:
 make test
 ```
 
-The suite includes a FUSE integration test (`tests/test_fuse_mount.sh`) that
-mounts a sample image and verifies reads/writes. It skips automatically if
-FUSE is unavailable.
-
 ### `test-core` (C API tests)
 
-Binary: `fat12_core_test`
-Source: `/Users/vlad/Documents/Playground/tests/test_fat12_core.c`
+Binary: `fat12_core_test`  
+Source: `tests/test_fat12_core.c`
 
 Coverage includes:
 
@@ -216,7 +187,7 @@ Coverage includes:
 
 ### `test-cli` (shell smoke test)
 
-Script: `/Users/vlad/Documents/Playground/tests/test_cli.sh`
+Script: `tests/test_cli.sh`
 
 Coverage includes:
 
@@ -239,7 +210,7 @@ These include sample files for immediate testing.
 
 ## Troubleshooting
 
-### `fat12mount` not built
+### `fat12mount` not built on Linux/macOS
 
 If `make` prints:
 
@@ -247,7 +218,7 @@ If `make` prints:
 Skipping fat12mount (FUSE not available in build environment).
 ```
 
-Install FUSE development headers/libraries for your platform and rerun `make`.
+Install FUSE development headers/libraries and rerun `make`.
 
 ### Cannot mount on macOS
 
@@ -257,13 +228,30 @@ Install FUSE development headers/libraries for your platform and rerun `make`.
   terminal app has Network Volumes permission.
 - Ensure the mountpoint directory exists and is writable.
 
+### Cannot mount on Windows
+
+- Confirm WinFSP is installed. Download from https://winfsp.dev/ if needed.
+- **Important**: When installing WinFSP, choose "Full Installation" or ensure the "Launcher" component is included. The launcher service is required for mounting.
+- Run the installer as Administrator to register the WinFSP.Launcher service.
+- If you installed WinFSP without Administrator privileges, you can manually register the service:
+  ```cmd
+  sc create WinFsp.Launcher binPath= "C:\Program Files (x86)\WinFSP\bin\launcher-x64.exe" DisplayName= "WinFsp Launcher" start= demand
+  sc start WinFsp.Launcher
+  ```
+- Ensure the mountpoint directory exists.
+- If unmount fails, check that no other applications are using the mounted volume.
+
 ### File names rejected
 
 Current implementation enforces FAT 8.3 names. Use names up to `8.3` format (`NAME.TXT`, `DATA.BIN`, etc.).
 
 ## Development Notes
 
-The FAT12 core is written to be embeddable and used by both frontends. If you add features (LFN, FAT16/32, better rename semantics), implement in `fat12_core` first, then expose via `fat12tool` and `fat12mount`.
+The FAT12 core is written to be embeddable and used by all frontends. If you add features (LFN, FAT16/32, better rename semantics), implement in `fat12_core` first, then expose via `fat12tool` and `fat12mount`.
+
+The cross-platform mounting layer uses an abstraction via `vfs_ops.h`:
+- `vfs_fuse.c`: FUSE backend for Linux/macOS
+- `vfs_winfsp.c`: WinFSP backend for Windows
 
 ## License
 

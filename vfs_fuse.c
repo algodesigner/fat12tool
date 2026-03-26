@@ -5,14 +5,19 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  *
- * @file fat12_fuse.c
- * @brief FUSE frontend that exposes a FAT12 image as a mountable filesystem.
+ * @file vfs_fuse.c
+ * @brief FUSE frontend for FAT12 filesystem mounting.
+ *
+ * Supports both Linux (FUSE3) and macOS (FUSE2/FUSE-T).
  */
+#ifndef _WIN32
+
 #define _GNU_SOURCE
 #define _POSIX_C_SOURCE 200809L
 #define _DARWIN_C_SOURCE
 #define _FILE_OFFSET_BITS 64
 
+#include "vfs_ops.h"
 #include "fat12_core.h"
 
 #include <errno.h>
@@ -24,6 +29,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <time.h>
+#include <unistd.h>
 
 #if defined(__linux__)
 #define FUSE_USE_VERSION 31
@@ -48,11 +54,10 @@
 #pragma pack(push, 1)
 typedef struct {
     Fat12 fs;
-    /** Global lock protecting non-thread-safe core operations. */
     pthread_mutex_t lock;
-    /** Track last directory read on macOS to avoid readdir loops. */
     char readdir_path[256];
     int readdir_ready;
+    char *mountpoint;
 } Fat12Ctx;
 #pragma pack(pop)
 
@@ -79,10 +84,6 @@ static uint16_t fat12_fat_get(const Fat12 *fs, uint16_t cluster)
     return v & 0x0FFF;
 }
 
-/**
- * @brief Resolve process-global FUSE private data into typed context.
- * @return Pointer to mount context stored in FUSE private data.
- */
 static Fat12Ctx *ctx_from_fuse(void)
 {
     return (Fat12Ctx *)fuse_get_context()->private_data;
@@ -98,12 +99,6 @@ static ino_t fat12_hash_ino(const char *path)
     return (ino_t)h;
 }
 
-/**
- * @brief Convert FAT encoded date/time fields into POSIX timespec.
- * @param fat_time FAT time field.
- * @param fat_date FAT date field.
- * @param ts Output timespec structure.
- */
 static void fat_time_to_timespec(
         uint16_t fat_time, uint16_t fat_date, struct timespec *ts)
 {
@@ -134,12 +129,6 @@ static void fat_time_to_timespec(
     ts->tv_nsec = 0;
 }
 
-/**
- * @brief FUSE getattr callback backed by fat12_stat.
- * @param path Absolute virtual path.
- * @param st Output stat structure.
- * @return 0 on success, negative errno-style code on failure.
- */
 static int fat12fs_getattr(FAT12_GETATTR_SIG)
 {
 #if defined(__linux__)
@@ -217,14 +206,6 @@ static int fat12_readdir_add(
     return 0;
 }
 
-/**
- * @brief Adapter callback forwarding core list entries to FUSE filler.
- * @param name Entry name.
- * @param is_dir Non-zero if directory.
- * @param size Entry size in bytes.
- * @param user Opaque pointer carrying buffer and filler callback.
- * @return 0 to continue iteration, non-zero to stop.
- */
 static int list_cb(const char *name, int is_dir, uint32_t size, void *user)
 {
     ReaddirState *state = user;
@@ -239,16 +220,6 @@ static int list_cb(const char *name, int is_dir, uint32_t size, void *user)
 }
 
 #if defined(__linux__)
-/**
- * @brief FUSE readdir callback (Linux signature).
- * @param path Directory path.
- * @param buf FUSE directory buffer.
- * @param filler FUSE filler callback.
- * @param off Directory offset (unused).
- * @param fi FUSE file info (unused).
- * @param flags Readdir flags (unused).
- * @return 0 on success, negative errno-style code on failure.
- */
 static int fat12fs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
         off_t off, struct fuse_file_info *fi, enum fuse_readdir_flags flags)
 {
@@ -256,19 +227,9 @@ static int fat12fs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
     (void)fi;
     (void)flags;
 #else
-/**
- * @brief FUSE readdir callback (macOS / FUSE2 signature).
- * @param path Directory path.
- * @param buf FUSE directory buffer.
- * @param filler FUSE filler callback.
- * @param off Directory offset (unused).
- * @param fi FUSE file info (unused).
- * @return 0 on success, negative errno-style code on failure.
- */
 static int fat12fs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
         off_t off, struct fuse_file_info *fi)
 {
-    (void)fi;
 #endif
     Fat12Ctx *ctx = ctx_from_fuse();
 
@@ -293,12 +254,6 @@ static int fat12fs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
     return rc;
 }
 
-/**
- * @brief FUSE open callback validating path and access mode.
- * @param path File path.
- * @param fi FUSE file info containing requested open flags.
- * @return 0 on success, negative errno-style code on failure.
- */
 static int fat12fs_open(const char *path, struct fuse_file_info *fi)
 {
     Fat12Ctx *ctx = ctx_from_fuse();
@@ -336,15 +291,6 @@ static int fat12fs_opendir(const char *path, struct fuse_file_info *fi)
     return 0;
 }
 
-/**
- * @brief FUSE read callback delegating to fat12_read.
- * @param path File path.
- * @param buf Destination buffer.
- * @param size Maximum bytes to read.
- * @param off File offset.
- * @param fi FUSE file info (unused).
- * @return Bytes read or negative errno-style code.
- */
 static int fat12fs_read(const char *path, char *buf, size_t size, off_t off,
         struct fuse_file_info *fi)
 {
@@ -358,15 +304,6 @@ static int fat12fs_read(const char *path, char *buf, size_t size, off_t off,
     return (int)n;
 }
 
-/**
- * @brief FUSE write callback delegating to fat12_write.
- * @param path File path.
- * @param buf Source buffer.
- * @param size Number of bytes to write.
- * @param off File offset.
- * @param fi FUSE file info (unused).
- * @return Bytes written or negative errno-style code.
- */
 static int fat12fs_write(const char *path, const char *buf, size_t size,
         off_t off, struct fuse_file_info *fi)
 {
@@ -380,13 +317,6 @@ static int fat12fs_write(const char *path, const char *buf, size_t size,
     return (int)n;
 }
 
-/**
- * @brief FUSE create callback creating empty regular files.
- * @param path File path to create.
- * @param mode Requested mode (ignored; FAT permissions are fixed).
- * @param fi FUSE file info (unused).
- * @return 0 on success, negative errno-style code on failure.
- */
 static int fat12fs_create(
         const char *path, mode_t mode, struct fuse_file_info *fi)
 {
@@ -399,12 +329,6 @@ static int fat12fs_create(
     return rc;
 }
 
-/**
- * @brief FUSE mkdir callback.
- * @param path Directory path to create.
- * @param mode Requested mode (ignored; FAT permissions are fixed).
- * @return 0 on success, negative errno-style code on failure.
- */
 static int fat12fs_mkdir(const char *path, mode_t mode)
 {
     (void)mode;
@@ -415,11 +339,6 @@ static int fat12fs_mkdir(const char *path, mode_t mode)
     return rc;
 }
 
-/**
- * @brief FUSE unlink callback.
- * @param path File path to remove.
- * @return 0 on success, negative errno-style code on failure.
- */
 static int fat12fs_unlink(const char *path)
 {
     Fat12Ctx *ctx = ctx_from_fuse();
@@ -429,11 +348,6 @@ static int fat12fs_unlink(const char *path)
     return rc;
 }
 
-/**
- * @brief FUSE rmdir callback.
- * @param path Directory path to remove.
- * @return 0 on success, negative errno-style code on failure.
- */
 static int fat12fs_rmdir(const char *path)
 {
     Fat12Ctx *ctx = ctx_from_fuse();
@@ -443,13 +357,6 @@ static int fat12fs_rmdir(const char *path)
     return rc;
 }
 
-/**
- * @brief FUSE truncate callback.
- * @param path File path to resize.
- * @param size Target file size in bytes.
- * @param fi FUSE file info (unused).
- * @return 0 on success, negative errno-style code on failure.
- */
 static int fat12fs_truncate(FAT12_TRUNCATE_SIG)
 {
 #if defined(__linux__)
@@ -462,13 +369,6 @@ static int fat12fs_truncate(FAT12_TRUNCATE_SIG)
     return rc;
 }
 
-/**
- * @brief FUSE utimens callback mapping to current-time metadata update.
- * @param path Target path.
- * @param tv Requested times (ignored; current time is applied).
- * @param fi FUSE file info (unused).
- * @return 0 on success, negative errno-style code on failure.
- */
 static int fat12fs_utimens(FAT12_UTIMENS_SIG)
 {
     (void)tv;
@@ -511,15 +411,6 @@ static int fat12fs_releasedir(const char *path, struct fuse_file_info *fi)
     return 0;
 }
 
-/**
- * @brief FUSE rename callback.
- * @param from Source path.
- * @param to Destination path.
-#if defined(__linux__)
- * @param flags Linux rename flags (must be zero).
-#endif
- * @return 0 on success, negative errno-style code on failure.
- */
 static int fat12fs_rename(FAT12_RENAME_SIG)
 {
 #if defined(__linux__)
@@ -551,108 +442,42 @@ static const struct fuse_operations fat12_ops = {
         .rename = fat12fs_rename,
 };
 
-/**
- * @brief Print command usage for mount mode.
- * @param argv0 Program name for usage text.
- */
-static void usage(const char *argv0)
+static int vfs_fuse_init(VfsContext *ctx, const char *image, 
+                         const char *mountpoint, int partition)
 {
-    fprintf(stderr, "FAT12 FUSE Mounter\n\n");
-    fprintf(stderr, "Usage: %s [OPTIONS] [FUSE_OPTIONS]\n", argv0);
-    fprintf(stderr, "       %s --unmount <mountpoint>\n\n", argv0);
-    fprintf(stderr, "Options:\n");
-    fprintf(stderr,
-            "  --image PATH      Path to FAT12 image or full MBR disk image\n");
-    fprintf(stderr, "  --mount PATH      Directory to use as mount point\n");
-    fprintf(stderr,
-            "  --partition N     Partition index (1-4) for MBR images "
-            "(default: 0/image start)\n");
-    fprintf(stderr, "  --unmount, -u     Unmount the specified directory\n");
-    fprintf(stderr, "  --help, -h        Show this help message\n\n");
-    fprintf(stderr, "Examples:\n");
-    fprintf(stderr, "  %s --image disk.img --mount ./mnt -f\n", argv0);
-    fprintf(stderr, "  %s --image disk.img --partition 1 --mount ./mnt -f\n",
-            argv0);
-    fprintf(stderr, "  %s -u ./mnt\n", argv0);
+    Fat12Ctx *fctx = (Fat12Ctx *)ctx->platform_data;
+    fctx->mountpoint = strdup(mountpoint);
+    if (!fctx->mountpoint) {
+        return -ENOMEM;
+    }
+
+    uint64_t offset;
+    int rc = fat12_parse_partition_offset(image, partition, &offset);
+    if (rc < 0) {
+        return rc;
+    }
+
+    rc = fat12_open(&fctx->fs, image, offset);
+    if (rc < 0) {
+        return rc;
+    }
+
+    return 0;
 }
 
-/**
- * @brief Entry point for FAT12 FUSE mount executable.
- *
- * Parses tool-specific options, opens FAT12 core, then transfers control to
- * `fuse_main()` until unmount.
- * @param argc Argument count.
- * @param argv Argument vector.
- * @return Process exit status.
- */
-int main(int argc, char **argv)
+static void vfs_fuse_cleanup(VfsContext *ctx)
 {
-    const char *image = NULL;
-    const char *mountpoint = NULL;
-    int partition = 0;
-    int unmount = 0;
+    Fat12Ctx *fctx = (Fat12Ctx *)ctx->platform_data;
+    fat12_close(&fctx->fs);
+    pthread_mutex_destroy(&fctx->lock);
+    free(fctx->mountpoint);
+    free(fctx);
+    ctx->platform_data = NULL;
+}
 
-    for (int i = 1; i < argc; ++i) {
-        if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
-            usage(argv[0]);
-            return 0;
-        }
-        if ((strcmp(argv[i], "--unmount") == 0 || strcmp(argv[i], "-u") == 0) &&
-                i + 1 < argc) {
-            unmount = 1;
-            mountpoint = argv[++i];
-            continue;
-        }
-        if (strcmp(argv[i], "--image") == 0 && i + 1 < argc) {
-            image = argv[++i];
-            continue;
-        }
-        if (strcmp(argv[i], "--mount") == 0 && i + 1 < argc) {
-            mountpoint = argv[++i];
-            continue;
-        }
-        if (strcmp(argv[i], "--partition") == 0 && i + 1 < argc) {
-            partition = atoi(argv[++i]);
-            continue;
-        }
-    }
-
-    if (unmount) {
-        if (!mountpoint) {
-            usage(argv[0]);
-            return 1;
-        }
-        char cmd[1024];
-#if defined(__APPLE__)
-        snprintf(cmd, sizeof(cmd), "umount \"%s\"", mountpoint);
-#else
-        snprintf(cmd, sizeof(cmd), "fusermount3 -u \"%s\"", mountpoint);
-#endif
-        return system(cmd);
-    }
-
-    if (!image || !mountpoint) {
-        usage(argv[0]);
-        return 1;
-    }
-
-    struct stat st;
-    if (stat(image, &st) != 0) {
-        fprintf(stderr, "Error: Image file '%s' not found or inaccessible.\n",
-                image);
-        return 1;
-    }
-    if (stat(mountpoint, &st) != 0) {
-        fprintf(stderr, "Error: Mount point '%s' does not exist.\n",
-                mountpoint);
-        fprintf(stderr, "Please create it first: mkdir -p %s\n", mountpoint);
-        return 1;
-    }
-    if (!S_ISDIR(st.st_mode)) {
-        fprintf(stderr, "Error: Mount point '%s' is not a directory.\n",
-                mountpoint);
-        return 1;
-    }
+static int vfs_fuse_main_loop(VfsContext *ctx, int argc, char *argv[])
+{
+    Fat12Ctx *fctx = (Fat12Ctx *)ctx->platform_data;
 
     char **fuse_argv = (char **)calloc((size_t)argc + 4, sizeof(char *));
     if (!fuse_argv)
@@ -660,7 +485,7 @@ int main(int argc, char **argv)
 
     int fuse_argc = 0;
     fuse_argv[fuse_argc++] = strdup(argv[0]);
-    fuse_argv[fuse_argc++] = strdup(mountpoint);
+    fuse_argv[fuse_argc++] = strdup(fctx->mountpoint);
     if (!fuse_argv[0] || !fuse_argv[1]) {
         for (int j = 0; j < fuse_argc; ++j)
             free(fuse_argv[j]);
@@ -711,46 +536,16 @@ int main(int argc, char **argv)
     fuse_argc++;
 #endif
 
-    uint64_t offset;
-    int rc = fat12_parse_partition_offset(image, partition, &offset);
-    if (rc < 0) {
-        fprintf(stderr, "Failed to parse partition offset: %s\n",
-                strerror(-rc));
-        free(fuse_argv);
-        return 1;
-    }
-
-    Fat12Ctx *ctx = (Fat12Ctx *)calloc(1, sizeof(Fat12Ctx));
-    if (!ctx) {
-        free(fuse_argv);
-        return 1;
-    }
-
-    if (pthread_mutex_init(&ctx->lock, NULL) != 0) {
-        free(ctx);
-        free(fuse_argv);
-        return 1;
-    }
-
-    rc = fat12_open(&ctx->fs, image, offset);
-    if (rc < 0) {
-        fprintf(stderr, "Cannot open FAT12 filesystem: %s\n", strerror(-rc));
-        pthread_mutex_destroy(&ctx->lock);
-        free(ctx);
-        free(fuse_argv);
-        return 1;
-    }
-
     fuse_argv[fuse_argc] = NULL;
 
     int ret = 0;
 #if defined(__linux__)
-    ret = fuse_main(fuse_argc, fuse_argv, &fat12_ops, ctx);
+    ret = fuse_main(fuse_argc, fuse_argv, &fat12_ops, fctx);
 #else
     char *fuse_mountpoint = NULL;
     int multithreaded = 0;
     struct fuse *fuse = fuse_setup(fuse_argc, fuse_argv, &fat12_ops,
-            sizeof(fat12_ops), &fuse_mountpoint, &multithreaded, ctx);
+            sizeof(fat12_ops), &fuse_mountpoint, &multithreaded, fctx);
     if (!fuse) {
         ret = 1;
     } else {
@@ -764,11 +559,78 @@ int main(int argc, char **argv)
     }
 #endif
 
-    fat12_close(&ctx->fs);
-    pthread_mutex_destroy(&ctx->lock);
-    free(ctx);
     for (int i = 0; i < fuse_argc; ++i)
         free(fuse_argv[i]);
     free(fuse_argv);
+
     return ret;
 }
+
+static int vfs_fuse_unmount(const char *mountpoint)
+{
+#if defined(__APPLE__)
+    char cmd[1024];
+    snprintf(cmd, sizeof(cmd), "umount \"%s\"", mountpoint);
+#else
+    char cmd[1024];
+    snprintf(cmd, sizeof(cmd), "fusermount3 -u \"%s\"", mountpoint);
+#endif
+
+    int rc = system(cmd);
+    if (rc != 0) {
+        vfs_error("Unmount failed for '%s'. Is the volume still in use?\n",
+                  mountpoint);
+        return 1;
+    }
+    vfs_info("Successfully unmounted '%s'\n", mountpoint);
+    return 0;
+}
+
+static VfsOps vfs_fuse_ops_instance = {
+    .init = vfs_fuse_init,
+    .cleanup = vfs_fuse_cleanup,
+    .main_loop = vfs_fuse_main_loop,
+    .unmount = vfs_fuse_unmount,
+#if defined(__linux__)
+    .platform_name = "FUSE3",
+#else
+    .platform_name = "FUSE-T",
+#endif
+};
+
+VfsOps *vfs_fuse_ops(void)
+{
+    return &vfs_fuse_ops_instance;
+}
+
+VfsContext *vfs_context_create(void)
+{
+    VfsContext *ctx = (VfsContext *)calloc(1, sizeof(VfsContext));
+    if (!ctx)
+        return NULL;
+
+    Fat12Ctx *fctx = (Fat12Ctx *)calloc(1, sizeof(Fat12Ctx));
+    if (!fctx) {
+        free(ctx);
+        return NULL;
+    }
+
+    if (pthread_mutex_init(&fctx->lock, NULL) != 0) {
+        free(fctx);
+        free(ctx);
+        return NULL;
+    }
+
+    ctx->platform_data = fctx;
+    return ctx;
+}
+
+void vfs_context_destroy(VfsContext *ctx)
+{
+    if (ctx) {
+        free(ctx->platform_data);
+        free(ctx);
+    }
+}
+
+#endif /* !_WIN32 */

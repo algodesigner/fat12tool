@@ -130,10 +130,8 @@ static int root_list_cb(const char *name, int is_dir, uint32_t size, void *user)
  */
 static int run_core_ops_test(const char *fixture_p1_img)
 {
-    char tmp_template[] = "/tmp/fat12-core-test-XXXXXX.img";
-    int fd = mkstemps(tmp_template, 4);
-    CHECK(fd >= 0, "mkstemps failed");
-    close(fd);
+    char tmp_template[256];
+    snprintf(tmp_template, sizeof(tmp_template), "fat12-core-test-%d.img", (int)getpid());
 
     CHECK(copy_file(fixture_p1_img, tmp_template) == 0, "copy fixture failed");
 
