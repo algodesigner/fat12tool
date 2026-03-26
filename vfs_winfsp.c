@@ -408,9 +408,6 @@ static void vfs_winfs_cleanup(VfsContext *ctx)
 {
     Fat12Ctx *fctx = (Fat12Ctx *)ctx->platform_data;
     fat12_close(&fctx->fs);
-    pthread_mutex_destroy(&fctx->lock);
-    free(fctx);
-    ctx->platform_data = NULL;
 }
 
 static int vfs_winfs_main_loop(VfsContext *ctx, int argc, char *argv[])
@@ -468,10 +465,6 @@ static int vfs_winfs_main_loop(VfsContext *ctx, int argc, char *argv[])
                 // Unix-style absolute path
                 snprintf(win_mountpoint, sizeof(win_mountpoint), "%s%s", cwd, fctx->mountpoint);
             }
-            // Convert forward slashes to backslashes
-            for (char *p = win_mountpoint; *p; ++p) {
-                if (*p == '/') *p = '\\';
-            }
         } else {
             strncpy(win_mountpoint, fctx->mountpoint, MAX_PATH - 1);
             win_mountpoint[MAX_PATH - 1] = '\0';
@@ -479,6 +472,10 @@ static int vfs_winfs_main_loop(VfsContext *ctx, int argc, char *argv[])
     } else {
         strncpy(win_mountpoint, fctx->mountpoint, MAX_PATH - 1);
         win_mountpoint[MAX_PATH - 1] = '\0';
+    }
+    // Convert forward slashes to backslashes for Windows API and WinFSP
+    for (char *p = win_mountpoint; *p; ++p) {
+        if (*p == '/') *p = '\\';
     }
 
     int fuse_argc = 0;
@@ -529,13 +526,20 @@ static int vfs_winfs_main_loop(VfsContext *ctx, int argc, char *argv[])
 
 static int vfs_winfs_unmount(const char *mountpoint)
 {
-    fuse_unmount(mountpoint, NULL);
+    char win_mountpoint[MAX_PATH];
+    strncpy(win_mountpoint, mountpoint, MAX_PATH - 1);
+    win_mountpoint[MAX_PATH - 1] = '\0';
+    for (char *p = win_mountpoint; *p; ++p) {
+        if (*p == '/') *p = '\\';
+    }
+
+    fuse_unmount(win_mountpoint, NULL);
 #if defined(_WIN32)
     Sleep(500);
-    if (RemoveDirectoryA(mountpoint)) {
+    if (RemoveDirectoryA(win_mountpoint)) {
         vfs_info("Unmounted and removed '%s'\n", mountpoint);
     } else {
-        vfs_info("Unmounted '%s' (directory may not be empty or already removed)\n", mountpoint);
+        vfs_info("Unmounted '%s' (directory may already be removed or not empty)\n", mountpoint);
     }
 #else
     vfs_info("Successfully unmounted '%s'\n", mountpoint);
