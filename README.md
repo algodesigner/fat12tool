@@ -60,16 +60,18 @@ Install FUSE-T:
 
 ### Windows (MinGW + WinFSP)
 
-1. Install WinFSP: `winget install WinFsp` or download from https://winfsp.dev/
-2. Install make via [Scoop](https://scoop.sh/):
+1. **Install WinFSP**: Download the installer from the [official website](https://winfsp.dev/). 
+   * **Important**: During installation, ensure you tick the **"Developer"** section (it is unticked by default). This is absolutely essential as it contains the header files required for the build.
+2. **Configure PATH**: The WinFSP installer does not automatically add its binary directory to your system `PATH`. You must manually add `C:\Program Files (x86)\WinFSP\bin` (or your custom install path) to your environment variables. This is essential for the application to load `winfsp-x64.dll` at runtime.
+3. Install make via [Scoop](https://scoop.sh/):
 ```sh
 scoop install make
 ```
-3. Install MinGW-w64 via Scoop:
+4. Install MinGW-w64 via Scoop:
 ```sh
 scoop install mingw
 ```
-4. Build:
+5. Build:
 ```sh
 make fat12mount.exe
 ```
@@ -235,15 +237,15 @@ Install FUSE development headers/libraries and rerun `make`.
 
 ### Cannot mount on Windows
 
-- Confirm WinFSP is installed. Download from https://winfsp.dev/ if needed.
-- **Important**: When installing WinFSP, choose "Full Installation" or ensure the "Launcher" component is included. The launcher service is required for mounting.
-- Run the installer as Administrator to register the WinFSP.Launcher service.
+- **WinFSP Installation**: Confirm WinFSP is installed. Download from [https://winfsp.dev/](https://winfsp.dev/).
+- **Missing Headers**: Ensure you ticked the **"Developer"** section during WinFSP installation. Without it, the build will fail as headers like `winfsp/winfsp.h` won't be found.
+- **Missing DLL**: If the application fails to start with a "DLL not found" error, ensure `C:\Program Files (x86)\WinFSP\bin` is added to your system `PATH`. This is essential for loading `winfsp-x64.dll`.
+- **WinFSP Launcher**: Confirm the "Launcher" component was included during installation. Run the installer as Administrator to ensure the WinFsp.Launcher service is registered.
 - If you installed WinFSP without Administrator privileges, you can manually register the service:
   ```cmd
   sc create WinFsp.Launcher binPath= "C:\Program Files (x86)\WinFSP\bin\launcher-x64.exe" DisplayName= "WinFsp Launcher" start= demand
   sc start WinFsp.Launcher
   ```
-- Ensure the mountpoint directory exists.
 - If unmount fails, check that no other applications are using the mounted volume.
 
 ### File names rejected
