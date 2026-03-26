@@ -62,7 +62,7 @@ endif
 
 all: fat12tool fat12mount-optional fat12mount.exe
 
-test: fat12tool test-core test-unit test-cli test-fuse
+test: fat12tool test-core test-unit test-cli test-fuse test-mount-robust
 
 deps:
 	./scripts/install_deps.sh
@@ -109,16 +109,16 @@ else
 	@echo "Skipping fat12mount (FUSE not available in build environment)."
 endif
 
-test-core: fat12_core_test
-	./fat12_core_test sample-fat12-p1.img sample-fat12-2part.img
+test-core: tests/fat12_core_test
+	./tests/fat12_core_test sample-fat12-p1.img sample-fat12-2part.img
 
-test-unit: fat12_core_unit_test
-	./fat12_core_unit_test
+test-unit: tests/fat12_core_unit_test
+	./tests/fat12_core_unit_test
 
-fat12_core_test: tests/test_fat12_core.c $(CORE_SRCS) $(CORE_HDRS) tests/utils.c tests/utils.h
+tests/fat12_core_test: tests/test_fat12_core.c $(CORE_SRCS) $(CORE_HDRS) tests/utils.c tests/utils.h
 	$(CC) $(CFLAGS) -o $@ tests/test_fat12_core.c tests/utils.c $(CORE_SRCS)
 
-fat12_core_unit_test: tests/test_fat12_core_unit.c $(CORE_HDRS) tests/utils.c tests/utils.h
+tests/fat12_core_unit_test: tests/test_fat12_core_unit.c $(CORE_HDRS) tests/utils.c tests/utils.h
 	$(CC) $(CFLAGS) -DFAT12_INTERNAL -o $@ tests/test_fat12_core_unit.c tests/utils.c
 
 test-cli: fat12tool
@@ -137,6 +137,19 @@ ifeq ($(HAVE_FUSE)$(HAVE_WINFSP),00)
 	@echo "Skipping fat12mount (FUSE/WinFSP not available)."
 endif
 
+test-mount-robust: tests/fat12_verify
+ifneq ($(HAVE_FUSE),0)
+	$(MAKE) fat12mount
+	./tests/test_mount_robust.sh
+endif
+ifeq ($(HAVE_FUSE),0)
+	@echo "Skipping robust mount tests (FUSE not available)."
+endif
+
+tests/fat12_verify: tests/fat12_verify.c tests/utils.c tests/utils.h fat12_core.c
+	$(CC) $(CFLAGS) -o $@ tests/fat12_verify.c tests/utils.c fat12_core.c
+
 clean:
-	rm -f fat12tool fat12mount fat12mount.exe fat12_core.o fat12_core_test fat12_core_unit_test
+	rm -f fat12tool fat12mount fat12mount.exe fat12_core.o
+	rm -f tests/fat12_core_test tests/fat12_core_unit_test tests/fat12_verify
 	rm -f vfs_fuse.o vfs_winfsp.o

@@ -82,9 +82,29 @@ typedef struct {
     uint32_t sector_count;
 } MbrPartition;
 #pragma pack(pop)
+ 
+/* Internal forward declarations */
+static int read_at(FILE *fp, uint64_t off, void *buf, size_t len);
+static int write_at(FILE *fp, uint64_t off, const void *buf, size_t len);
+static uint64_t cluster_to_offset(const Fat12 *fs, uint16_t cluster);
+static int flush_fat(Fat12 *fs);
+static uint16_t fat_get(const Fat12 *fs, uint16_t cluster);
+static void fat_set(Fat12 *fs, uint16_t cluster, uint16_t value);
+static int is_eoc(uint16_t v);
+static int alloc_cluster(Fat12 *fs, uint16_t *out);
+static int free_chain(Fat12 *fs, uint16_t first);
+static int dir_parent_cluster(Fat12 *fs, uint16_t cluster, uint16_t *parent);
+static int find_in_dir(Fat12 *fs, uint16_t dir_cluster,
+        const uint8_t name83[11], EntryRef *out);
+static int read_dir_entry_at(Fat12 *fs, uint64_t off, DirEntry *e);
+static void short_name_to_str(const uint8_t in[11], char *out, size_t n);
+static int to_short_name(const char *in, uint8_t out[11]);
+static void fat_time_date(uint16_t *out_time, uint16_t *out_date);
+static int write_dir_entry_at(Fat12 *fs, uint64_t off, const DirEntry *e);
 
 /**
  * @brief Parse MBR partition table and return selected partition offset.
+
  * @param img Path to disk image file.
  * @param partition_idx 1-based partition index; <=0 means offset 0.
  * @param offset_out Output byte offset for FAT volume.
@@ -460,6 +480,7 @@ static int find_free_entry_slot(
     }
 
     uint16_t c = dir_cluster;
+    uint16_t last = c;
     while (1) {
         uint64_t base = cluster_to_offset(fs, c);
         uint32_t count = fs->cluster_size / sizeof(DirEntry);
@@ -473,12 +494,24 @@ static int find_free_entry_slot(
                 return 0;
             }
         }
+        last = c;
         uint16_t n = fat_get(fs, c);
         if (is_eoc(n))
             break;
         c = n;
     }
-    return -1;
+
+    /* Grow directory if possible */
+    uint16_t next;
+    if (alloc_cluster(fs, &next) != 0)
+        return -1;
+
+    fat_set(fs, last, next);
+    if (flush_fat(fs) != 0)
+        return -1;
+
+    *off_out = cluster_to_offset(fs, next);
+    return 0;
 }
 
 /**
