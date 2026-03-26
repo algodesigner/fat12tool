@@ -230,6 +230,7 @@ static int fat12fs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 static int fat12fs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
         off_t off, struct fuse_file_info *fi)
 {
+    (void)fi;
 #endif
     Fat12Ctx *ctx = ctx_from_fuse();
 
