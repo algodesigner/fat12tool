@@ -45,23 +45,26 @@ static void trim_newline(char *s)
 static void normalize_path(
         Session *sess, const char *in, char *out, size_t out_cap)
 {
-    if (out_cap == 0) return;
+    if (out_cap == 0)
+        return;
 
     if (in[0] == '/') {
         strncpy(out, in, out_cap - 1);
         out[out_cap - 1] = '\0';
-        } else {
-            size_t cwd_len = strlen(sess->cwd_path);
-            size_t in_len = strlen(in);
+    } else {
+        size_t cwd_len = strlen(sess->cwd_path);
+        size_t in_len = strlen(in);
 
-            if (strcmp(sess->cwd_path, "/") == 0) {
-                size_t copy_len = in_len < out_cap - 1 ? in_len : (out_cap > 1 ? out_cap - 1 : 0);
-                out[0] = '/';
-                memcpy(out + 1, in, copy_len);
-                out[copy_len + 1] = '\0';
-            } else {
-                size_t avail = out_cap;
-                size_t copy_in_len = in_len;
+        if (strcmp(sess->cwd_path, "/") == 0) {
+            size_t copy_len = in_len < out_cap - 1
+                    ? in_len
+                    : (out_cap > 1 ? out_cap - 1 : 0);
+            out[0] = '/';
+            memcpy(out + 1, in, copy_len);
+            out[copy_len + 1] = '\0';
+        } else {
+            size_t avail = out_cap;
+            size_t copy_in_len = in_len;
 
             if (cwd_len + 1 > avail) {
                 copy_in_len = 0;

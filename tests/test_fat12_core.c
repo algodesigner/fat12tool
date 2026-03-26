@@ -117,12 +117,13 @@ static int root_list_cb(const char *name, int is_dir, uint32_t size, void *user)
     return 0;
 }
 
-#define CHECK_RC(rc, msg)                                                   \
-    do {                                                                    \
-        if ((rc) != 0) {                                                    \
-            fprintf(stderr, "FAIL: %s (rc=%d, line %d)\n", (msg), (int)(rc), __LINE__); \
-            return 1;                                                       \
-        }                                                                   \
+#define CHECK_RC(rc, msg)                                                    \
+    do {                                                                     \
+        if ((rc) != 0) {                                                     \
+            fprintf(stderr, "FAIL: %s (rc=%d, line %d)\n", (msg), (int)(rc), \
+                    __LINE__);                                               \
+            return 1;                                                        \
+        }                                                                    \
     } while (0)
 
 /**
@@ -131,7 +132,8 @@ static int root_list_cb(const char *name, int is_dir, uint32_t size, void *user)
 static int run_core_ops_test(const char *fixture_p1_img)
 {
     char tmp_template[256];
-    snprintf(tmp_template, sizeof(tmp_template), "fat12-core-test-%d.img", (int)getpid());
+    snprintf(tmp_template, sizeof(tmp_template), "fat12-core-test-%d.img",
+            (int)getpid());
 
     CHECK(copy_file(fixture_p1_img, tmp_template) == 0, "copy fixture failed");
 
@@ -220,7 +222,6 @@ static int run_core_ops_test(const char *fixture_p1_img)
     CHECK(rc == -ENOENT, "old dir name should be gone");
     rc = fat12_stat(&fs, "/TDIR/MOVEDIR", &node);
     CHECK(rc == 0, "moved dir should exist in target");
-
 
     rc = fat12_utimens_now(&fs, "/NEWNAME.TXT");
     CHECK(rc == 0, "utimens failed");

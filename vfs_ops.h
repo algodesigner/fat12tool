@@ -28,9 +28,9 @@ typedef struct VfsContext {
     int mount_fd;
 } VfsContext;
 
-#define vfs_error(...)   fprintf(stderr, "Error: " __VA_ARGS__)
+#define vfs_error(...) fprintf(stderr, "Error: " __VA_ARGS__)
 #define vfs_error_plat(p, ...) fprintf(stderr, "Error: [" p "] " __VA_ARGS__)
-#define vfs_info(...)    fprintf(stdout, __VA_ARGS__)
+#define vfs_info(...) fprintf(stdout, __VA_ARGS__)
 
 /**
  * @brief VFS operations vtable.
@@ -39,26 +39,25 @@ typedef struct VfsContext {
  * structure via its *_ops() function.
  */
 typedef struct VfsOps {
-    int  (*init)(VfsContext *ctx, const char *image, 
-                 const char *mountpoint, int partition);
+    int (*init)(VfsContext *ctx, const char *image, const char *mountpoint,
+            int partition);
     void (*cleanup)(VfsContext *ctx);
-    int  (*main_loop)(VfsContext *ctx, int argc, char *argv[]);
-    int  (*unmount)(const char *mountpoint);
+    int (*main_loop)(VfsContext *ctx, int argc, char *argv[]);
+    int (*unmount)(const char *mountpoint);
     const char *platform_name;
 } VfsOps;
 
 VfsContext *vfs_context_create(void);
-void        vfs_context_destroy(VfsContext *ctx);
+void vfs_context_destroy(VfsContext *ctx);
 
 #if defined(_WIN32)
-    VfsOps *vfs_winfsp_ops(void);
+VfsOps *vfs_winfsp_ops(void);
 #else
-    VfsOps *vfs_fuse_ops(void);
+VfsOps *vfs_fuse_ops(void);
 #endif
 
-int vfs_parse_args(int argc, char *argv[],
-                   char **image, char **mountpoint, 
-                   int *partition, int *unmount);
+int vfs_parse_args(int argc, char *argv[], char **image, char **mountpoint,
+        int *partition, int *unmount);
 
 void vfs_usage(const char *argv0);
 

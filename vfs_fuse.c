@@ -17,8 +17,8 @@
 #define _DARWIN_C_SOURCE
 #define _FILE_OFFSET_BITS 64
 
-#include "vfs_ops.h"
 #include "fat12_core.h"
+#include "vfs_ops.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -40,7 +40,8 @@
     const char *path, off_t size, struct fuse_file_info *fi
 #define FAT12_UTIMENS_SIG \
     const char *path, const struct timespec tv[2], struct fuse_file_info *fi
-#define FAT12_GETATTR_SIG const char *path, struct stat *st, struct fuse_file_info *fi
+#define FAT12_GETATTR_SIG \
+    const char *path, struct stat *st, struct fuse_file_info *fi
 #else
 #define FUSE_USE_VERSION 26
 #include <fuse.h>
@@ -443,8 +444,8 @@ static const struct fuse_operations fat12_ops = {
         .rename = fat12fs_rename,
 };
 
-static int vfs_fuse_init(VfsContext *ctx, const char *image, 
-                         const char *mountpoint, int partition)
+static int vfs_fuse_init(VfsContext *ctx, const char *image,
+        const char *mountpoint, int partition)
 {
     Fat12Ctx *fctx = (Fat12Ctx *)ctx->platform_data;
     fctx->mountpoint = strdup(mountpoint);
@@ -580,7 +581,7 @@ static int vfs_fuse_unmount(const char *mountpoint)
     int rc = system(cmd);
     if (rc != 0) {
         vfs_error("Unmount failed for '%s'. Is the volume still in use?\n",
-                  mountpoint);
+                mountpoint);
         return 1;
     }
 

@@ -13,9 +13,9 @@
 
 #define _GNU_SOURCE
 
-#include <windows.h>
 #include <assert.h>
 #include <stddef.h>
+#include <windows.h>
 
 /* WinFSP headers */
 #include <winfsp/winfsp.h>
@@ -23,8 +23,8 @@
 #define FUSE_USE_VERSION 28
 #include <fuse/fuse.h>
 
-#include "vfs_ops.h"
 #include "fat12_core.h"
+#include "vfs_ops.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -239,8 +239,8 @@ static int fat12fs_opendir(const char *path, struct fuse_file_info *fi)
     return 0;
 }
 
-static int fat12fs_read(const char *path, char *buf, size_t size, fuse_off_t off,
-        struct fuse_file_info *fi)
+static int fat12fs_read(const char *path, char *buf, size_t size,
+        fuse_off_t off, struct fuse_file_info *fi)
 {
     (void)fi;
     Fat12Ctx *ctx = ctx_from_fuse();
@@ -380,8 +380,8 @@ static const struct fuse_operations fat12_ops = {
         .rename = fat12fs_rename,
 };
 
-static int vfs_winfs_init(VfsContext *ctx, const char *image, 
-                          const char *mountpoint, int partition)
+static int vfs_winfs_init(VfsContext *ctx, const char *image,
+        const char *mountpoint, int partition)
 {
     Fat12Ctx *fctx = (Fat12Ctx *)ctx->platform_data;
     strncpy(fctx->mountpoint, mountpoint, MAX_PATH - 1);
@@ -430,17 +430,18 @@ static int vfs_winfs_main_loop(VfsContext *ctx, int argc, char *argv[])
         si.wShowWindow = SW_HIDE;
         PROCESS_INFORMATION pi = {0};
         char cmdline[1024];
-        snprintf(cmdline, sizeof(cmdline), "\"%s\" --image \"%s\" --mount \"%s\" -f",
-                 argv[0], fctx->image_path, fctx->mountpoint);
+        snprintf(cmdline, sizeof(cmdline),
+                "\"%s\" --image \"%s\" --mount \"%s\" -f", argv[0],
+                fctx->image_path, fctx->mountpoint);
         if (fctx->partition > 0) {
             char part[16];
             snprintf(part, sizeof(part), " --partition %d", fctx->partition);
             strncat(cmdline, part, sizeof(cmdline) - strlen(cmdline) - 1);
         }
-        if (!CreateProcess(NULL, cmdline, NULL, NULL, FALSE, 
-                          CREATE_NEW_CONSOLE, 
-                          NULL, NULL, &si, &pi)) {
-            fprintf(stderr, "Failed to spawn mount process: %lu\n", GetLastError());
+        if (!CreateProcess(NULL, cmdline, NULL, NULL, FALSE, CREATE_NEW_CONSOLE,
+                    NULL, NULL, &si, &pi)) {
+            fprintf(stderr, "Failed to spawn mount process: %lu\n",
+                    GetLastError());
         } else {
             CloseHandle(pi.hProcess);
             CloseHandle(pi.hThread);
@@ -455,15 +456,18 @@ static int vfs_winfs_main_loop(VfsContext *ctx, int argc, char *argv[])
 
     // Convert mountpoint to Windows absolute path
     char win_mountpoint[MAX_PATH];
-    if (fctx->mountpoint[0] == '/' || (fctx->mountpoint[0] == '.' && fctx->mountpoint[1] == '/')) {
+    if (fctx->mountpoint[0] == '/' ||
+            (fctx->mountpoint[0] == '.' && fctx->mountpoint[1] == '/')) {
         // Relative path - get absolute
         char cwd[MAX_PATH];
         if (GetCurrentDirectoryA(sizeof(cwd), cwd)) {
             if (fctx->mountpoint[0] == '.') {
-                snprintf(win_mountpoint, sizeof(win_mountpoint), "%s%s", cwd, fctx->mountpoint + 1);
+                snprintf(win_mountpoint, sizeof(win_mountpoint), "%s%s", cwd,
+                        fctx->mountpoint + 1);
             } else {
                 // Unix-style absolute path
-                snprintf(win_mountpoint, sizeof(win_mountpoint), "%s%s", cwd, fctx->mountpoint);
+                snprintf(win_mountpoint, sizeof(win_mountpoint), "%s%s", cwd,
+                        fctx->mountpoint);
             }
         } else {
             strncpy(win_mountpoint, fctx->mountpoint, MAX_PATH - 1);
@@ -475,7 +479,8 @@ static int vfs_winfs_main_loop(VfsContext *ctx, int argc, char *argv[])
     }
     // Convert forward slashes to backslashes for Windows API and WinFSP
     for (char *p = win_mountpoint; *p; ++p) {
-        if (*p == '/') *p = '\\';
+        if (*p == '/')
+            *p = '\\';
     }
 
     int fuse_argc = 0;
@@ -530,7 +535,8 @@ static int vfs_winfs_unmount(const char *mountpoint)
     strncpy(win_mountpoint, mountpoint, MAX_PATH - 1);
     win_mountpoint[MAX_PATH - 1] = '\0';
     for (char *p = win_mountpoint; *p; ++p) {
-        if (*p == '/') *p = '\\';
+        if (*p == '/')
+            *p = '\\';
     }
 
     fuse_unmount(win_mountpoint, NULL);
@@ -539,7 +545,10 @@ static int vfs_winfs_unmount(const char *mountpoint)
     if (RemoveDirectoryA(win_mountpoint)) {
         vfs_info("Unmounted and removed '%s'\n", mountpoint);
     } else {
-        vfs_info("Unmounted '%s' (directory may already be removed or not empty)\n", mountpoint);
+        vfs_info(
+                "Unmounted '%s' (directory may already be removed or not "
+                "empty)\n",
+                mountpoint);
     }
 #else
     vfs_info("Successfully unmounted '%s'\n", mountpoint);
@@ -548,11 +557,11 @@ static int vfs_winfs_unmount(const char *mountpoint)
 }
 
 static VfsOps vfs_winfs_ops_instance = {
-    .init = vfs_winfs_init,
-    .cleanup = vfs_winfs_cleanup,
-    .main_loop = vfs_winfs_main_loop,
-    .unmount = vfs_winfs_unmount,
-    .platform_name = "WinFSP",
+        .init = vfs_winfs_init,
+        .cleanup = vfs_winfs_cleanup,
+        .main_loop = vfs_winfs_main_loop,
+        .unmount = vfs_winfs_unmount,
+        .platform_name = "WinFSP",
 };
 
 VfsOps *vfs_winfsp_ops(void)

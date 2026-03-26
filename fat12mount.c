@@ -18,15 +18,14 @@
 #include <windows.h>
 #endif
 
+#include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
-#include <dirent.h>
 
-int vfs_parse_args(int argc, char *argv[],
-                   char **image, char **mountpoint, 
-                   int *partition, int *unmount)
+int vfs_parse_args(int argc, char *argv[], char **image, char **mountpoint,
+        int *partition, int *unmount)
 {
     *image = NULL;
     *mountpoint = NULL;
@@ -72,13 +71,11 @@ void vfs_usage(const char *argv0)
     fprintf(stderr,
             "  --partition N     Partition index (1-4) for MBR images "
             "(default: 0/image start)\n");
-    fprintf(stderr,
-            "  --unmount, -u     Unmount the specified directory\n");
+    fprintf(stderr, "  --unmount, -u     Unmount the specified directory\n");
     fprintf(stderr, "  --help, -h        Show this help message\n\n");
     fprintf(stderr, "Examples:\n");
     fprintf(stderr, "  %s --image disk.img --mount ./mnt\n", argv0);
-    fprintf(stderr,
-            "  %s --image disk.img --partition 1 --mount ./mnt\n",
+    fprintf(stderr, "  %s --image disk.img --partition 1 --mount ./mnt\n",
             argv0);
     fprintf(stderr, "  %s -u ./mnt\n", argv0);
 }
@@ -106,27 +103,32 @@ int main(int argc, char *argv[])
             char *lastbackslash = strrchr(dll_path, '\\');
             if (lastbackslash) {
                 *lastbackslash = '\0';
-                strncat(dll_path, "\\winfsp-x64.dll", sizeof(dll_path) - strlen(dll_path) - 1);
+                strncat(dll_path, "\\winfsp-x64.dll",
+                        sizeof(dll_path) - strlen(dll_path) - 1);
                 h = LoadLibraryA(dll_path);
             }
         }
         if (!h) {
             fprintf(stderr, "Error: WinFSP DLL not found.\n\n");
-            fprintf(stderr, "WinFSP is required to mount FAT12 images on Windows.\n");
-            fprintf(stderr, "Please install WinFSP from https://winfsp.dev/ or via:\n");
+            fprintf(stderr,
+                    "WinFSP is required to mount FAT12 images on Windows.\n");
+            fprintf(stderr,
+                    "Please install WinFSP from https://winfsp.dev/ or via:\n");
             fprintf(stderr, "    winget install WinFsp\n\n");
-            fprintf(stderr, "After installation, ensure WinFSP bin directory is in your PATH.\n");
+            fprintf(stderr,
+                    "After installation, ensure WinFSP bin directory is in "
+                    "your PATH.\n");
             return 1;
         }
     }
 #endif
 
-    if (vfs_parse_args(argc, argv, &image, &mountpoint, 
-                       &partition, &unmount_flag) != 0) {
+    if (vfs_parse_args(argc, argv, &image, &mountpoint, &partition,
+                &unmount_flag) != 0) {
         vfs_usage(argv[0]);
         return 1;
     }
-    
+
 #if defined(_WIN32)
     VfsOps *ops = vfs_winfsp_ops();
 #else
@@ -142,13 +144,13 @@ int main(int argc, char *argv[])
         int rc = ops->unmount(mountpoint);
         return rc;
     }
-    
+
     if (!image) {
         vfs_error("Option '--image' requires a value.\n");
         vfs_usage(argv[0]);
         return 1;
     }
-    
+
     if (!mountpoint) {
         vfs_error("Option '--mount' requires a value.\n");
         vfs_usage(argv[0]);
@@ -164,13 +166,15 @@ int main(int argc, char *argv[])
 #if defined(_WIN32)
     // On Windows with WinFSP, mountpoint can be:
     // 1. A drive letter like "X:" (no check needed)
-    // 2. A folder path (WinFSP will create it if it doesn't exist, so we allow non-existent paths)
-    // Only check if it exists and is not a directory, and ensure it's empty
+    // 2. A folder path (WinFSP will create it if it doesn't exist, so we allow
+    // non-existent paths) Only check if it exists and is not a directory, and
+    // ensure it's empty
     if (!(strlen(mountpoint) == 2 && mountpoint[1] == ':')) {
         struct stat st;
         if (stat(mountpoint, &st) == 0) {
             if (!S_ISDIR(st.st_mode)) {
-                vfs_error("Mount point '%s' exists but is not a directory.\n", mountpoint);
+                vfs_error("Mount point '%s' exists but is not a directory.\n",
+                        mountpoint);
                 return 1;
             }
             // Check if directory is empty (only . and .. entries)
@@ -179,14 +183,18 @@ int main(int argc, char *argv[])
                 int has_entries = 0;
                 struct dirent *entry;
                 while ((entry = readdir(d)) != NULL) {
-                    if (strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0) {
+                    if (strcmp(entry->d_name, ".") != 0 &&
+                            strcmp(entry->d_name, "..") != 0) {
                         has_entries = 1;
                         break;
                     }
                 }
                 closedir(d);
                 if (has_entries) {
-                    vfs_error("Mount point '%s' is not empty. Use an empty directory.\n", mountpoint);
+                    vfs_error(
+                            "Mount point '%s' is not empty. Use an empty "
+                            "directory.\n",
+                            mountpoint);
                     return 1;
                 }
             }
@@ -195,8 +203,10 @@ int main(int argc, char *argv[])
 #else
     struct stat st;
     if (stat(mountpoint, &st) != 0) {
-        vfs_error("Mount point '%s' does not exist. Create it first: mkdir -p %s\n",
-                  mountpoint, mountpoint);
+        vfs_error(
+                "Mount point '%s' does not exist. Create it first: mkdir -p "
+                "%s\n",
+                mountpoint, mountpoint);
         return 1;
     }
     if (!S_ISDIR(st.st_mode)) {
@@ -204,27 +214,27 @@ int main(int argc, char *argv[])
         return 1;
     }
 #endif
-    
+
     VfsContext *ctx = vfs_context_create();
     if (!ctx) {
         vfs_error("Failed to allocate context.\n");
         return 1;
     }
-    
+
     int rc = ops->init(ctx, image, mountpoint, partition);
     if (rc < 0) {
-        vfs_error("Failed to initialise filesystem '%s': %s\n",
-                  image, strerror(-rc));
+        vfs_error("Failed to initialise filesystem '%s': %s\n", image,
+                strerror(-rc));
         vfs_context_destroy(ctx);
         return 1;
     }
-    
-    vfs_info("Mounting FAT12 image '%s' at '%s' using %s\n",
-             image, mountpoint, ops->platform_name);
-    
+
+    vfs_info("Mounting FAT12 image '%s' at '%s' using %s\n", image, mountpoint,
+            ops->platform_name);
+
     rc = ops->main_loop(ctx, argc, argv);
     ops->cleanup(ctx);
     vfs_context_destroy(ctx);
-    
+
     return rc;
 }
