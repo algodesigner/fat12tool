@@ -70,6 +70,8 @@ else
   exit 0
 fi
 
+MNT_DIR="$ROOT_DIR/fat12-fuse-mnt-$$"
+
 if [ ! -x "$FAT12MOUNT" ]; then
   echo "SKIP: fat12mount not built"
   exit 0
@@ -108,6 +110,8 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 cp "$IMG_SRC" "$TMP_IMG"
+
+mkdir -p "$MNT_DIR"
 
 EXTRA_FUSE_ARGS=""
 if [ "$OS" = "Darwin" ]; then
