@@ -9,13 +9,12 @@
  * without spawning external processes, significantly speeding up tests on Windows.
  */
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wformat-truncation"
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <dirent.h>
+#include <errno.h>
+#include <unistd.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -35,8 +34,15 @@
 #endif
 
 static int test_dir_stress(const char *mnt) {
-    char path[2048];
-    char sub[2048];
+    size_t mnt_len = strlen(mnt);
+    if (mnt_len > 240) {
+        fprintf(stderr, "Mount path too long for test buffers\n");
+        return -1;
+    }
+    
+    char sub[256];  /* mnt (240) + /STRESS (7) + NUL = 248 */
+    char path[512];  /* sub + /F_XXX.TXT (11) + NUL = 259, compiler warning is overly cautious */
+    
     snprintf(sub, sizeof(sub), "%s/STRESS", mnt);
     
     printf("  Testing directory visibility stress (100 files) at %s...\n", sub);
@@ -80,8 +86,15 @@ static int test_dir_stress(const char *mnt) {
 }
 
 static int test_interleaved(const char *mnt) {
-    char path[2048];
-    char sub[2048];
+    size_t mnt_len = strlen(mnt);
+    if (mnt_len + 9 > 256 || mnt_len + 11 > 512) {
+        fprintf(stderr, "Mount path too long for test buffers\n");
+        return -1;
+    }
+    
+    char sub[256];
+    char path[512];
+    
     snprintf(sub, sizeof(sub), "%s/CACHE", mnt);
     
     printf("  Testing interleaved modifications (50 files)...\n");
@@ -116,7 +129,7 @@ static int test_interleaved(const char *mnt) {
 }
 
 static int test_rename_truncate(const char *mnt) {
-    char p1[2048], p2[2048];
+    char p1[512], p2[512];
     snprintf(p1, sizeof(p1), "%s/REN_ME.TXT", mnt);
     snprintf(p2, sizeof(p2), "%s/RENAMED.TXT", mnt);
 
@@ -160,5 +173,3 @@ int main(int argc, char **argv) {
     printf("PASS: fat12_stress C-based integration checks\n");
     return 0;
 }
-
-#pragma GCC diagnostic pop
