@@ -25,6 +25,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 #include <time.h>
 
 #define FAT12_EOC 0x0FF8 /**< End of chain marker. */
@@ -912,6 +913,11 @@ int fat12_open(
         return -EIO;
     }
 
+    if (fs->bpb.bytes_per_sector == 0 || fs->bpb.sectors_per_cluster == 0) {
+        fat12_close(fs);
+        return -EINVAL;
+    }
+
     fs->total_sectors = fs->bpb.total_sectors_16 ? fs->bpb.total_sectors_16
                                                  : fs->bpb.total_sectors_32;
     fs->root_dir_sectors = ((uint32_t)fs->bpb.root_entry_count * 32 +
@@ -932,11 +938,6 @@ int fat12_open(
                     fs->bpb.bytes_per_sector;
     fs->cluster_size =
             (uint32_t)fs->bpb.sectors_per_cluster * fs->bpb.bytes_per_sector;
-
-    if (fs->bpb.bytes_per_sector == 0 || fs->bpb.sectors_per_cluster == 0) {
-        fat12_close(fs);
-        return -EINVAL;
-    }
 
     fs->total_clusters = (fs->total_sectors -
                                  (fs->bpb.reserved_sectors +

@@ -9,6 +9,10 @@
  * @brief Unit tests for internal helper functions of FAT12 core.
  */
 
+#define _GNU_SOURCE
+#define _XOPEN_SOURCE 700
+#define _FILE_OFFSET_BITS 64
+
 #include "../fat12_core.h"
 #include "utils.h"
 
