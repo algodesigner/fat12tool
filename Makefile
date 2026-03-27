@@ -60,7 +60,7 @@ else
   HAVE_WINFSP := 0
 endif
 
-all: fat12tool fat12mount-optional fat12mount.exe
+all: fat12tool fat12mount fat12mount.exe
 
 test: fat12tool test-core test-unit test-cli test-mount-robust
 
