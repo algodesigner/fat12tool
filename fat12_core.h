@@ -121,7 +121,7 @@ typedef int (*fat12_list_cb)(
         const char *name, int is_dir, uint32_t size, void *user);
 
 /**
- * @brief Open a FAT12 volume from an image path.
+ * @brief Opens a FAT12 volume from an image path.
  *
  * @param fs                     Output filesystem handle.
  * @param image_path             Backing image path.
@@ -133,7 +133,7 @@ int fat12_open(
         Fat12 *fs, const char *image_path, uint64_t partition_offset_bytes);
 
 /**
- * @brief Release all resources associated with a FAT12 handle.
+ * @brief Releases all resources associated with a FAT12 handle.
  *
  * Safe to call on partially initialized handles.
  *
@@ -142,7 +142,7 @@ int fat12_open(
 void fat12_close(Fat12 *fs);
 
 /**
- * @brief Retrieve metadata for a file or directory by absolute FAT path.
+ * @brief Retrieves metadata for a file or directory by absolute FAT path.
  *
  * @param fs   Open filesystem handle.
  * @param path Absolute path (must start with `/`).
@@ -152,7 +152,7 @@ void fat12_close(Fat12 *fs);
 int fat12_stat(Fat12 *fs, const char *path, Fat12Node *out);
 
 /**
- * @brief Enumerate directory entries.
+ * @brief Enumerates directory entries.
  *
  * @param fs   Open filesystem handle.
  * @param path Absolute directory path.
@@ -163,7 +163,7 @@ int fat12_stat(Fat12 *fs, const char *path, Fat12Node *out);
 int fat12_list(Fat12 *fs, const char *path, fat12_list_cb cb, void *user);
 
 /**
- * @brief Read bytes from a file.
+ * @brief Reads bytes from a file.
  *
  * @param fs     Open filesystem handle.
  * @param path   Absolute file path.
@@ -176,7 +176,7 @@ ssize_t fat12_read(
         Fat12 *fs, const char *path, void *buf, size_t size, off_t offset);
 
 /**
- * @brief Write bytes into a file at the given offset.
+ * @brief Writes bytes into a file at the given offset.
  *
  * Gaps introduced by writing past end-of-file are zero-filled.
  *
@@ -191,7 +191,7 @@ ssize_t fat12_write(Fat12 *fs, const char *path, const void *buf, size_t size,
         off_t offset);
 
 /**
- * @brief Create an empty file.
+ * @brief Creates an empty file.
  *
  * @param fs   Open filesystem handle.
  * @param path Absolute path of new file.
@@ -200,7 +200,7 @@ ssize_t fat12_write(Fat12 *fs, const char *path, const void *buf, size_t size,
 int fat12_create(Fat12 *fs, const char *path);
 
 /**
- * @brief Create a new directory (including `.` and `..` initialization).
+ * @brief Creates a new directory (including `.` and `..` initialization).
  *
  * @param fs   Open filesystem handle.
  * @param path Absolute path of new directory.
@@ -209,7 +209,7 @@ int fat12_create(Fat12 *fs, const char *path);
 int fat12_mkdir(Fat12 *fs, const char *path);
 
 /**
- * @brief Remove a regular file.
+ * @brief Removes a regular file.
  *
  * @param fs   Open filesystem handle.
  * @param path Absolute file path.
@@ -218,7 +218,7 @@ int fat12_mkdir(Fat12 *fs, const char *path);
 int fat12_unlink(Fat12 *fs, const char *path);
 
 /**
- * @brief Remove an empty directory.
+ * @brief Removes an empty directory.
  *
  * @param fs   Open filesystem handle.
  * @param path Absolute directory path.
@@ -227,7 +227,7 @@ int fat12_unlink(Fat12 *fs, const char *path);
 int fat12_rmdir(Fat12 *fs, const char *path);
 
 /**
- * @brief Resize a file to an exact length.
+ * @brief Resizes a file to an exact length.
  *
  * If extended, new region is zero-filled. If shrunk, excess clusters are freed.
  *
@@ -239,7 +239,7 @@ int fat12_rmdir(Fat12 *fs, const char *path);
 int fat12_truncate(Fat12 *fs, const char *path, off_t size);
 
 /**
- * @brief Update access/write timestamps to the current local time.
+ * @brief Updates access/write timestamps to the current local time.
  *
  * @param fs   Open filesystem handle.
  * @param path Absolute file or directory path.
@@ -248,7 +248,7 @@ int fat12_truncate(Fat12 *fs, const char *path, off_t size);
 int fat12_utimens_now(Fat12 *fs, const char *path);
 
 /**
- * @brief Rename or move a file or directory.
+ * @brief Renames or moves a file or directory.
  *
  * @param fs   Open filesystem handle.
  * @param from Source absolute path.
@@ -258,7 +258,7 @@ int fat12_utimens_now(Fat12 *fs, const char *path);
 int fat12_rename(Fat12 *fs, const char *from, const char *to);
 
 /**
- * @brief Parse MBR partition table and return selected partition offset.
+ * @brief Parses MBR partition table and returns selected partition offset.
  *
  * @param img           Path to disk image file.
  * @param partition_idx 1-based partition index; <=0 means offset 0.

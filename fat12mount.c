@@ -24,6 +24,16 @@
 #include <string.h>
 #include <sys/stat.h>
 
+/**
+ * @brief Parses command line arguments for the mounter.
+ * @param argc Argument count.
+ * @param argv Argument vector.
+ * @param image Output image path.
+ * @param mountpoint Output mount point.
+ * @param partition Output partition index.
+ * @param unmount Output unmount flag.
+ * @return 0 on success, non-zero if help was requested.
+ */
 int vfs_parse_args(int argc, char *argv[], char **image, char **mountpoint,
         int *partition, int *unmount)
 {
@@ -59,6 +69,10 @@ int vfs_parse_args(int argc, char *argv[], char **image, char **mountpoint,
     return 0;
 }
 
+/**
+ * @brief Prints usage information to stderr.
+ * @param argv0 Program name.
+ */
 void vfs_usage(const char *argv0)
 {
     fprintf(stderr, "FAT12 Filesystem Mounter\n\n");
@@ -81,14 +95,34 @@ void vfs_usage(const char *argv0)
 }
 
 #if defined(_WIN32)
+/**
+ * @brief Returns the WinFSP operations structure.
+ * @return Pointer to VfsOps.
+ */
 VfsOps *vfs_winfsp_ops(void);
 #else
+/**
+ * @brief Returns the FUSE operations structure.
+ * @return Pointer to VfsOps.
+ */
 VfsOps *vfs_fuse_ops(void);
 #endif
 
+/**
+ * @brief Creates a new VFS context.
+ * @return Pointer to new VfsContext.
+ */
 VfsContext *vfs_context_create(void);
+
+/**
+ * @brief Destroys a VFS context.
+ * @param ctx Context to destroy.
+ */
 void vfs_context_destroy(VfsContext *ctx);
 
+/**
+ * @brief Entry point for the mounting utility.
+ */
 int main(int argc, char *argv[])
 {
     char *image = NULL, *mountpoint = NULL;

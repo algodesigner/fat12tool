@@ -23,10 +23,17 @@
 
 #define MAX_PATH_LEN 8192
 
+/**
+ * @brief Manages the state of an interactive shell session.
+ */
 typedef struct {
-    char cwd_path[MAX_PATH_LEN];
+    char cwd_path[MAX_PATH_LEN]; /**< Current working directory path. */
 } Session;
 
+/**
+ * @brief Removes trailing newline characters from a string.
+ * @param s String to trim.
+ */
 static void trim_newline(char *s)
 {
     size_t n = strlen(s);
@@ -36,7 +43,7 @@ static void trim_newline(char *s)
 }
 
 /**
- * @brief Normalise a path relative to the current working directory.
+ * @brief Normalises a path relative to the current working directory.
  * @param sess Current session with cwd.
  * @param in Input path (absolute or relative).
  * @param out Output buffer for normalised absolute path.
@@ -81,6 +88,14 @@ static void normalize_path(
     }
 }
 
+/**
+ * @brief Callback for listing directory entries.
+ * @param name Entry name.
+ * @param is_dir Non-zero if entry is a directory.
+ * @param size File size.
+ * @param user Callback user data.
+ * @return 0 to continue iteration.
+ */
 static int list_cb(const char *name, int is_dir, uint32_t size, void *user)
 {
     (void)user;
@@ -88,6 +103,9 @@ static int list_cb(const char *name, int is_dir, uint32_t size, void *user)
     return 0;
 }
 
+/**
+ * @brief Prints help information to stdout.
+ */
 static void print_help(void)
 {
     printf("FAT12 Toolkit Shell\n\n");
@@ -160,6 +178,9 @@ static int write_host_file(const char *path, const uint8_t *buf, uint32_t len)
     return 0;
 }
 
+/**
+ * @brief Entry point for the interactive shell.
+ */
 int main(int argc, char **argv)
 {
     const char *image = NULL;

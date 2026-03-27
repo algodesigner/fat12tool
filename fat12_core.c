@@ -27,59 +27,71 @@
 #include <sys/stat.h>
 #include <time.h>
 
-#define FAT12_EOC 0x0FF8
-#define ATTR_DIRECTORY 0x10
-#define ATTR_VOLUME_ID 0x08
-#define ATTR_LFN 0x0F
+#define FAT12_EOC 0x0FF8 /**< End of chain marker. */
+#define ATTR_DIRECTORY 0x10 /**< Directory attribute bit. */
+#define ATTR_VOLUME_ID 0x08 /**< Volume ID attribute bit. */
+#define ATTR_LFN 0x0F /**< Long File Name attribute bit. */
 
 #pragma pack(push, 1)
+/**
+ * @brief Represents the raw FAT12 boot sector layout.
+ */
 typedef struct {
-    uint8_t jmp[3];
-    uint8_t oem[8];
-    uint16_t bytes_per_sector;
-    uint8_t sectors_per_cluster;
-    uint16_t reserved_sectors;
-    uint8_t fat_count;
-    uint16_t root_entry_count;
-    uint16_t total_sectors_16;
-    uint8_t media;
-    uint16_t sectors_per_fat;
-    uint16_t sectors_per_track;
-    uint16_t heads;
-    uint32_t hidden_sectors;
-    uint32_t total_sectors_32;
+    uint8_t jmp[3]; /**< Jump instruction. */
+    uint8_t oem[8]; /**< OEM string. */
+    uint16_t bytes_per_sector; /**< Bytes per logical sector. */
+    uint8_t sectors_per_cluster; /**< Sectors per cluster. */
+    uint16_t reserved_sectors; /**< Number of reserved sectors. */
+    uint8_t fat_count; /**< Number of FATs. */
+    uint16_t root_entry_count; /**< Root directory entry count. */
+    uint16_t total_sectors_16; /**< Total sectors (16-bit). */
+    uint8_t media; /**< Media descriptor. */
+    uint16_t sectors_per_fat; /**< Sectors per FAT. */
+    uint16_t sectors_per_track; /**< Sectors per track. */
+    uint16_t heads; /**< Number of heads. */
+    uint32_t hidden_sectors; /**< Hidden sectors. */
+    uint32_t total_sectors_32; /**< Total sectors (32-bit). */
 } BootSector;
 
+/**
+ * @brief Represents a raw FAT directory entry.
+ */
 typedef struct {
-    uint8_t name[11];
-    uint8_t attr;
-    uint8_t ntres;
-    uint8_t crt_time_tenth;
-    uint16_t crt_time;
-    uint16_t crt_date;
-    uint16_t acc_date;
-    uint16_t first_cluster_hi;
-    uint16_t wrt_time;
-    uint16_t wrt_date;
-    uint16_t first_cluster_lo;
-    uint32_t file_size;
+    uint8_t name[11]; /**< Short name (8.3). */
+    uint8_t attr; /**< Attributes. */
+    uint8_t ntres; /**< Reserved. */
+    uint8_t crt_time_tenth; /**< Creation time (tenths). */
+    uint16_t crt_time; /**< Creation time. */
+    uint16_t crt_date; /**< Creation date. */
+    uint16_t acc_date; /**< Last access date. */
+    uint16_t first_cluster_hi; /**< High word of first cluster. */
+    uint16_t wrt_time; /**< Last write time. */
+    uint16_t wrt_date; /**< Last write date. */
+    uint16_t first_cluster_lo; /**< Low word of first cluster. */
+    uint32_t file_size; /**< File size in bytes. */
 } DirEntry;
 #pragma pack(pop)
 
+/**
+ * @brief Holds a reference to a directory entry and its location.
+ */
 typedef struct {
-    DirEntry entry;
-    uint64_t offset;
-    int found;
+    DirEntry entry; /**< Entry payload. */
+    uint64_t offset; /**< Absolute byte offset. */
+    int found; /**< Non-zero if entry exists. */
 } EntryRef;
 
 #pragma pack(push, 1)
+/**
+ * @brief Represents an MBR partition table entry.
+ */
 typedef struct {
-    uint8_t status;
-    uint8_t chs_first[3];
-    uint8_t type;
-    uint8_t chs_last[3];
-    uint32_t lba_start;
-    uint32_t sector_count;
+    uint8_t status; /**< Partition status. */
+    uint8_t chs_first[3]; /**< CHS start. */
+    uint8_t type; /**< Partition type. */
+    uint8_t chs_last[3]; /**< CHS end. */
+    uint32_t lba_start; /**< LBA start. */
+    uint32_t sector_count; /**< Sector count. */
 } MbrPartition;
 #pragma pack(pop)
  
@@ -102,9 +114,9 @@ static int to_short_name(const char *in, uint8_t out[11]);
 static void fat_time_date(uint16_t *out_time, uint16_t *out_date);
 static int write_dir_entry_at(Fat12 *fs, uint64_t off, const DirEntry *e);
 
-/**
- * @brief Parse MBR partition table and return selected partition offset.
-
+/*
+ * @brief Parses MBR partition table and returns selected partition offset.
+ *
  * @param img Path to disk image file.
  * @param partition_idx 1-based partition index; <=0 means offset 0.
  * @param offset_out Output byte offset for FAT volume.
@@ -142,7 +154,7 @@ int fat12_parse_partition_offset(
 }
 
 /**
- * @brief Read bytes from an absolute image offset.
+ * @brief Reads bytes from an absolute image offset.
  * @param fp Open image file handle.
  * @param off Absolute byte offset within the image.
  * @param buf Destination buffer.
@@ -159,7 +171,7 @@ static int read_at(FILE *fp, uint64_t off, void *buf, size_t len)
 }
 
 /**
- * @brief Write bytes to an absolute image offset.
+ * @brief Writes bytes to an absolute image offset.
  * @param fp Open image file handle.
  * @param off Absolute byte offset within the image.
  * @param buf Source buffer.
@@ -176,7 +188,7 @@ static int write_at(FILE *fp, uint64_t off, const void *buf, size_t len)
 }
 
 /**
- * @brief Convert a cluster number to an absolute byte offset.
+ * @brief Converts a cluster number to an absolute byte offset.
  * @param fs Open FAT12 context.
  * @param cluster FAT cluster number (>=2 for data clusters).
  * @return Absolute byte offset of cluster start.
@@ -187,7 +199,7 @@ static uint64_t cluster_to_offset(const Fat12 *fs, uint16_t cluster)
 }
 
 /**
- * @brief Flush in-memory FAT content to all on-disk FAT replicas.
+ * @brief Flushes in-memory FAT content to all on-disk FAT replicas.
  * @param fs Open FAT12 context.
  * @return 0 on success, -1 on write failure.
  */
@@ -203,7 +215,7 @@ static int flush_fat(Fat12 *fs)
 }
 
 /**
- * @brief Read a 12-bit FAT table entry.
+ * @brief Reads a 12-bit FAT table entry.
  * @param fs Open FAT12 context.
  * @param cluster Cluster index to inspect.
  * @return FAT12 entry value (masked to 12 bits).
@@ -221,7 +233,7 @@ static uint16_t fat_get(const Fat12 *fs, uint16_t cluster)
 }
 
 /**
- * @brief Write a 12-bit FAT table entry.
+ * @brief Writes a 12-bit FAT table entry.
  * @param fs Open FAT12 context.
  * @param cluster Cluster index to update.
  * @param value New FAT12 value (lower 12 bits are used).
@@ -241,7 +253,7 @@ static void fat_set(Fat12 *fs, uint16_t cluster, uint16_t value)
 }
 
 /**
- * @brief Test whether a FAT entry value is an end-of-chain marker.
+ * @brief Tests whether a FAT entry value is an end-of-chain marker.
  * @param v FAT12 entry value.
  * @return Non-zero when value is EOC, otherwise zero.
  */
@@ -251,7 +263,7 @@ static int is_eoc(uint16_t v)
 }
 
 /**
- * @brief Convert text filename to FAT 8.3 raw name bytes.
+ * @brief Converts text filename to FAT 8.3 raw name bytes.
  * @param in Input file name (`NAME.EXT` style).
  * @param out Output 11-byte FAT short name buffer.
  * @return 0 on success, -1 when the name is invalid for 8.3 format.
@@ -296,7 +308,7 @@ static int to_short_name(const char *in, uint8_t out[11])
 }
 
 /**
- * @brief Convert FAT 8.3 raw bytes into printable name text.
+ * @brief Converts FAT 8.3 raw bytes into printable name text.
  * @param in Input 11-byte FAT short name.
  * @param out Destination character buffer.
  * @param n Destination capacity in bytes.
@@ -320,7 +332,7 @@ static void short_name_to_str(const uint8_t in[11], char *out, size_t n)
 }
 
 /**
- * @brief Read one directory entry from the image.
+ * @brief Reads one directory entry from the image.
  * @param fs Open FAT12 context.
  * @param off Absolute byte offset of the directory entry.
  * @param e Output entry structure.
@@ -332,7 +344,7 @@ static int read_dir_entry_at(Fat12 *fs, uint64_t off, DirEntry *e)
 }
 
 /**
- * @brief Write one directory entry to the image.
+ * @brief Writes one directory entry to the image.
  * @param fs Open FAT12 context.
  * @param off Absolute byte offset of the directory entry.
  * @param e Entry payload to write.
@@ -347,7 +359,7 @@ static int write_dir_entry_at(Fat12 *fs, uint64_t off, const DirEntry *e)
 }
 
 /**
- * @brief Encode current local wall-clock time into FAT date/time fields.
+ * @brief Encodes current local wall-clock time into FAT date/time fields.
  * @param out_time Output FAT time field.
  * @param out_date Output FAT date field.
  */
@@ -371,7 +383,7 @@ static void fat_time_date(uint16_t *out_time, uint16_t *out_date)
 }
 
 /**
- * @brief Resolve a directory's parent cluster using its `..` entry.
+ * @brief Resolves a directory's parent cluster using its `..` entry.
  * @param fs Open FAT12 context.
  * @param cluster Directory cluster (0 for root).
  * @param parent Output parent cluster.
@@ -392,7 +404,7 @@ static int dir_parent_cluster(Fat12 *fs, uint16_t cluster, uint16_t *parent)
 }
 
 /**
- * @brief Look up an 8.3 entry inside a directory.
+ * @brief Looks up an 8.3 entry inside a directory.
  * @param fs Open FAT12 context.
  * @param dir_cluster Directory cluster (0 for root directory region).
  * @param name83 Target 11-byte short name.
@@ -456,7 +468,7 @@ static int find_in_dir(Fat12 *fs, uint16_t dir_cluster,
 }
 
 /**
- * @brief Find a reusable directory slot (unused or deleted).
+ * @brief Finds a reusable directory slot (unused or deleted).
  * @param fs Open FAT12 context.
  * @param dir_cluster Directory cluster (0 for root).
  * @param off_out Output absolute offset of free slot.
@@ -515,7 +527,7 @@ static int find_free_entry_slot(
 }
 
 /**
- * @brief Resolve an absolute path for lookup or creation.
+ * @brief Resolves an absolute path for lookup or creation.
  * @param fs Open FAT12 context.
  * @param path Absolute path (must start with `/`).
  * @param out Resolved entry information (`found=0` when leaf does not exist).
@@ -596,7 +608,7 @@ static int resolve_abs_path(Fat12 *fs, const char *path, EntryRef *out,
 }
 
 /**
- * @brief Materialise a FAT cluster chain into a heap buffer.
+ * @brief Materialises a FAT cluster chain into a heap buffer.
  * @param fs Open FAT12 context.
  * @param first First cluster in chain (or <2 for empty chain).
  * @param arr Output pointer to allocated cluster array.
@@ -638,7 +650,7 @@ static int collect_chain(Fat12 *fs, uint16_t first, uint16_t **arr, size_t *n)
 }
 
 /**
- * @brief Allocate one free cluster and initialise it to zero.
+ * @brief Allocates one free cluster and initialises it to zero.
  * @param fs Open FAT12 context.
  * @param out Output allocated cluster number.
  * @return 0 on success, -1 when full or on I/O error.
@@ -666,7 +678,7 @@ static int alloc_cluster(Fat12 *fs, uint16_t *out)
 }
 
 /**
- * @brief Release all clusters in a chain.
+ * @brief Releases all clusters in a chain.
  * @param fs Open FAT12 context.
  * @param first First cluster in chain.
  * @return 0 on success, -1 on FAT flush failure.
@@ -685,7 +697,7 @@ static int free_chain(Fat12 *fs, uint16_t first)
 }
 
 /**
- * @brief Resize a cluster chain to an exact cluster count.
+ * @brief Resizes a cluster chain to an exact cluster count.
  * @param fs Open FAT12 context.
  * @param first_cluster In/out first cluster of the chain.
  * @param need_clusters Target chain length.
@@ -767,7 +779,7 @@ static int ensure_chain_size(
 }
 
 /**
- * @brief Create a new directory entry in a target directory.
+ * @brief Creates a new directory entry in a target directory.
  * @param fs Open FAT12 context.
  * @param dir_cluster Parent directory cluster (0 for root).
  * @param name File or directory name (8.3 compatible text).
@@ -813,7 +825,7 @@ static int add_entry(Fat12 *fs, uint16_t dir_cluster, const char *name,
 }
 
 /**
- * @brief Mark a directory entry as deleted.
+ * @brief Marks a directory entry as deleted.
  * @param fs Open FAT12 context.
  * @param off Absolute offset of the directory entry.
  * @return 0 on success, -1 on write failure.
@@ -828,7 +840,7 @@ static int remove_entry(Fat12 *fs, uint64_t off)
 }
 
 /**
- * @brief Check whether a directory contains no live entries.
+ * @brief Checks whether a directory contains no live entries.
  * @param fs Open FAT12 context.
  * @param cluster Directory cluster (0 for root).
  * @return Non-zero when directory is empty, otherwise zero.
@@ -878,8 +890,9 @@ static int is_dir_empty(Fat12 *fs, uint16_t cluster)
     return 1;
 }
 
-/**
- * @brief Open a FAT12 filesystem from an image path and base offset.
+/*
+ * @brief Opens a FAT12 filesystem from an image path and base offset.
+ *
  * @param fs Filesystem handle output.
  * @param image_path Backing image path.
  * @param partition_offset_bytes Byte offset where FAT12 boot sector starts.
@@ -927,9 +940,9 @@ int fat12_open(
 
     fs->total_clusters = (fs->total_sectors -
                                  (fs->bpb.reserved_sectors +
-                                         (uint32_t)fs->bpb.fat_count *
-                                                 fs->bpb.sectors_per_fat +
-                                         fs->root_dir_sectors)) /
+                                          (uint32_t)fs->bpb.fat_count *
+                                                  fs->bpb.sectors_per_fat +
+                                          fs->root_dir_sectors)) /
             fs->bpb.sectors_per_cluster;
     if (fs->total_clusters < 1 || fs->total_clusters >= 4085) {
         fat12_close(fs);
@@ -950,8 +963,9 @@ int fat12_open(
     return 0;
 }
 
-/**
- * @brief Close an open FAT12 handle and release resources.
+/*
+ * @brief Closes an open FAT12 handle and releases resources.
+ *
  * @param fs Open FAT12 context.
  */
 void fat12_close(Fat12 *fs)
@@ -963,8 +977,9 @@ void fat12_close(Fat12 *fs)
     memset(fs, 0, sizeof(*fs));
 }
 
-/**
- * @brief Fetch metadata for a file or directory.
+/*
+ * @brief Fetches metadata for a file or directory.
+ *
  * @param fs Open FAT12 context.
  * @param path Absolute path.
  * @param out Output metadata.
@@ -990,8 +1005,9 @@ int fat12_stat(Fat12 *fs, const char *path, Fat12Node *out)
     return 0;
 }
 
-/**
- * @brief Enumerate entries in a directory.
+/*
+ * @brief Enumerates entries in a directory.
+ *
  * @param fs Open FAT12 context.
  * @param path Absolute directory path.
  * @param cb Callback invoked per entry.
@@ -1065,8 +1081,9 @@ int fat12_list(Fat12 *fs, const char *path, fat12_list_cb cb, void *user)
     return 0;
 }
 
-/**
- * @brief Read bytes from a file.
+/*
+ * @brief Reads bytes from a file.
+ *
  * @param fs Open FAT12 context.
  * @param path Absolute file path.
  * @param buf Destination buffer.
@@ -1130,8 +1147,9 @@ ssize_t fat12_read(
     return (ssize_t)read_bytes;
 }
 
-/**
- * @brief Write bytes into a file.
+/*
+ * @brief Writes bytes into a file.
+ *
  * @param fs Open FAT12 context.
  * @param path Absolute file path.
  * @param buf Source data.
@@ -1203,8 +1221,9 @@ ssize_t fat12_write(
     return (ssize_t)size;
 }
 
-/**
- * @brief Create an empty regular file.
+/*
+ * @brief Creates an empty regular file.
+ *
  * @param fs Open FAT12 context.
  * @param path Absolute file path.
  * @return 0 on success, negative errno-style code on failure.
@@ -1226,8 +1245,9 @@ int fat12_create(Fat12 *fs, const char *path)
     return 0;
 }
 
-/**
- * @brief Initialise a new directory cluster with dot entries.
+/*
+ * @brief Initialises a new directory cluster with dot entries.
+ *
  * @param fs Open FAT12 context.
  * @param cluster Newly allocated directory cluster.
  * @param parent_cluster Parent directory cluster.
@@ -1273,8 +1293,9 @@ static int mkdir_init(Fat12 *fs, uint16_t cluster, uint16_t parent_cluster)
     return rc;
 }
 
-/**
- * @brief Create a directory.
+/*
+ * @brief Creates a directory.
+ *
  * @param fs Open FAT12 context.
  * @param path Absolute directory path.
  * @return 0 on success, negative errno-style code on failure.
@@ -1303,8 +1324,9 @@ int fat12_mkdir(Fat12 *fs, const char *path)
     return 0;
 }
 
-/**
- * @brief Remove a regular file.
+/*
+ * @brief Removes a regular file.
+ *
  * @param fs Open FAT12 context.
  * @param path Absolute file path.
  * @return 0 on success, negative errno-style code on failure.
@@ -1328,8 +1350,9 @@ int fat12_unlink(Fat12 *fs, const char *path)
     return 0;
 }
 
-/**
- * @brief Remove an empty directory.
+/*
+ * @brief Removes an empty directory.
+ *
  * @param fs Open FAT12 context.
  * @param path Absolute directory path.
  * @return 0 on success, negative errno-style code on failure.
@@ -1355,8 +1378,9 @@ int fat12_rmdir(Fat12 *fs, const char *path)
     return 0;
 }
 
-/**
- * @brief Resize a regular file.
+/*
+ * @brief Resizes a regular file.
+ *
  * @param fs Open FAT12 context.
  * @param path Absolute file path.
  * @param size Target file size in bytes.
@@ -1369,14 +1393,18 @@ int fat12_truncate(Fat12 *fs, const char *path, off_t size)
 
     if (size < 0)
         return -EINVAL;
+
     EntryRef r;
     if (resolve_abs_path(fs, path, &r, NULL, NULL, 0) != 0 || !r.found)
         return -ENOENT;
     if (r.entry.attr & ATTR_DIRECTORY)
         return -EISDIR;
 
-    uint32_t old_size = r.entry.file_size;
     uint32_t new_size = (uint32_t)size;
+    uint32_t old_size = r.entry.file_size;
+
+    if (new_size == old_size)
+        return 0;
 
     if (new_size > old_size) {
         // Zero the gap in the current last cluster if any
@@ -1416,8 +1444,9 @@ int fat12_truncate(Fat12 *fs, const char *path, off_t size)
     return 0;
 }
 
-/**
- * @brief Update entry access and write dates to the current local time.
+/*
+ * @brief Updates entry access and write dates to the current local time.
+ *
  * @param fs Open FAT12 context.
  * @param path Absolute file or directory path.
  * @return 0 on success, negative errno-style code on failure.
@@ -1437,8 +1466,9 @@ int fat12_utimens_now(Fat12 *fs, const char *path)
     return 0;
 }
 
-/**
- * @brief Rename or move a file or directory.
+/*
+ * @brief Renames or moves a file or directory.
+ *
  * @param fs Open FAT12 context.
  * @param from Source absolute path.
  * @param to Target absolute path.
