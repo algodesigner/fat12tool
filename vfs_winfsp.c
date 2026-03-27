@@ -541,7 +541,6 @@ static int vfs_winfs_unmount(const char *mountpoint)
 
     fuse_unmount(win_mountpoint, NULL);
 #if defined(_WIN32)
-    Sleep(500);
     if (RemoveDirectoryA(win_mountpoint)) {
         vfs_info("Unmounted and removed '%s'\n", mountpoint);
     } else {

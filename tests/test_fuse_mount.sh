@@ -68,7 +68,7 @@ MOUNT_PID=$!
 
 mounted=0
 i=0
-while [ "$i" -lt 50 ]; do
+while [ "$i" -lt 100 ]; do
   if ls "$MNT_DIR" 2>/dev/null | grep -q "HELLO.TXT"; then
     mounted=1
     break
@@ -76,7 +76,7 @@ while [ "$i" -lt 50 ]; do
   if ! kill -0 "$MOUNT_PID" >/dev/null 2>&1; then
     break
   fi
-  sleep 0.2
+  sleep 0.1
   i=$((i + 1))
 done
 
@@ -129,7 +129,7 @@ rmdir "$MNT_DIR/MDIR"
 if [ "$OS" = "Windows" ]; then
   # Ensure the process is really gone before deleting image
   taskkill //F //IM fat12mount.exe >/dev/null 2>&1 || true
-  sleep 2
+  sleep 0.5
 fi
 rm -f "$IMG_TEST"
 

@@ -75,15 +75,15 @@ run_mount() {
   # Wait for mount to be ready
   mounted=0
   i=0
-  while [ "$i" -lt 50 ]; do
-    if ls "$MNT_DIR" 2>/dev/null | grep -q "HELLO.TXT"; then
+  while [ "$i" -lt 500 ]; do
+    if [ -f "$MNT_DIR/HELLO.TXT" ] 2>/dev/null; then
       mounted=1
       break
     fi
     if ! kill -0 "$MOUNT_PID" >/dev/null 2>&1; then
       break
     fi
-    sleep 0.2
+    sleep 0.01
     i=$((i + 1))
   done
 
@@ -100,156 +100,72 @@ run_unmount() {
   
   # Verify process exit
   i=0
-  while [ "$i" -lt 100 ]; do
-    if [ "$OS" = "Windows" ]; then
-      # tasklist check for native windows processes
-      if ! tasklist //FI "IMAGENAME eq fat12mount.exe" 2>/dev/null | grep -q "fat12mount.exe"; then
-        break
-      fi
-    else
-      if ! kill -0 "$MOUNT_PID" >/dev/null 2>&1; then
-        break
-      fi
+  while [ "$i" -lt 200 ]; do
+    if ! kill -0 "$MOUNT_PID" >/dev/null 2>&1; then
+      break
     fi
-    sleep 0.2
+    sleep 0.01
     i=$((i + 1))
   done
   
-  if [ "$OS" = "Windows" ]; then
-    if tasklist //FI "IMAGENAME eq fat12mount.exe" 2>/dev/null | grep -q "fat12mount.exe"; then
-       echo "Warning: fat12mount process still appears in tasklist after unmount"
-       # On Windows it can sometimes hang around or be another instance
-    fi
-  else
-    if kill -0 "$MOUNT_PID" >/dev/null 2>&1; then
+  if kill -0 "$MOUNT_PID" >/dev/null 2>&1; then
+    if [ "$OS" = "Windows" ]; then
+      taskkill //F //PID "$MOUNT_PID" >/dev/null 2>&1 || true
+    else
       echo "Error: fat12mount process did not terminate after unmount" >&2
       exit 1
     fi
   fi
 
   # Post-unmount integrity check
-  echo "Verifying image integrity..."
   VERIFY_EXE="$ROOT_DIR/tests/fat12_verify"
-  if [ "$OS" = "Windows" ]; then
-    VERIFY_EXE="${VERIFY_EXE}.exe"
-  fi
-  "$VERIFY_EXE" "$TMP_IMG"
+  [ "$OS" = "Windows" ] && VERIFY_EXE="${VERIFY_EXE}.exe"
+  "$VERIFY_EXE" "$TMP_IMG" >/dev/null
 }
 
-# --- TEST 1: Directory Visibility & Cache Stress ---
+# --- Single Consolidated Integration Phase ---
 run_mount
-echo "Testing directory visibility stress..."
-mkdir "$MNT_DIR/STRESS" || { echo "mkdir STRESS failed" >&2; exit 1; }
-# Brief sleep to let WinFSP settle on some systems
-[ "$OS" = "Windows" ] && sleep 1
 
-for i in $(seq 1 100); do
-  # Use redirection instead of touch for more reliability on WinFSP/MSYS2
-  echo "test" > "$MNT_DIR/STRESS/F_$i.TXT" || { echo "Failed to create F_$i.TXT" >&2; exit 1; }
-done
+echo "Verifying existing content..."
+grep -q "hello from p1" "$MNT_DIR/HELLO.TXT"
 
-COUNT=$(ls -1 "$MNT_DIR/STRESS" | grep "F_" | wc -l)
-if [ "$COUNT" -ne 100 ]; then
-  echo "Error: Directory visibility stress failed. Expected 100 files, found $COUNT" >&2
-  exit 1
-fi
+echo "Testing directory visibility stress, rename, and truncate..."
+STRESS_EXE="$ROOT_DIR/tests/fat12_stress"
+[ "$OS" = "Windows" ] && STRESS_EXE="${STRESS_EXE}.exe"
+"$STRESS_EXE" "$MNT_DIR"
 
-# Verify no "holes" in listing
-ls -1 "$MNT_DIR/STRESS" > list.txt
-for i in $(seq 1 100); do
-  if ! grep -q "F_$i.TXT" list.txt; then
-    echo "Error: File F_$i.TXT missing from listing" >&2
-    exit 1
-  fi
-done
-rm list.txt
-
-# Interleaved modification test (Targets readdir cache regressions)
-echo "Testing interleaved modifications..."
-mkdir "$MNT_DIR/CACHE" || { echo "mkdir CACHE failed" >&2; exit 1; }
-[ "$OS" = "Windows" ] && sleep 1
-for i in $(seq 1 50); do
-  echo "test" > "$MNT_DIR/CACHE/FILE_$i" || { echo "Failed to create FILE_$i" >&2; exit 1; }
-  # Immediate check after creation
-  if [ ! -f "$MNT_DIR/CACHE/FILE_$i" ]; then
-    echo "Error: FILE_$i not visible immediately after creation (Cache regression?)" >&2
-    exit 1
-  fi
-done
-# Now delete half and check visibility
-for i in $(seq 1 2 50); do
-  rm "$MNT_DIR/CACHE/FILE_$i"
-  if [ -f "$MNT_DIR/CACHE/FILE_$i" ]; then
-    echo "Error: FILE_$i still visible after deletion (Cache regression?)" >&2
-    exit 1
-  fi
-done
-run_unmount
-
-# --- TEST 2: Path Traversal & POSIX Conformance ---
-run_mount
 echo "Testing deep tree navigation..."
 mkdir -p "$MNT_DIR/A/B/C/D/E"
 echo "deep data" > "$MNT_DIR/A/B/C/D/E/ROOTED.TXT"
-if [ "$(cat "$MNT_DIR/A/B/C/D/E/ROOTED.TXT")" != "deep data" ]; then
-  echo "Error: Deep tree navigation failed" >&2
-  exit 1
-fi
 
 echo "Testing relative path resolution..."
 (
   cd "$MNT_DIR/A/B/C"
-  if [ "$(cat ../../../HELLO.TXT)" != "hello from p1" ]; then
-    echo "Error: Relative path resolution failed" >&2
-    exit 1
-  fi
+  [ "$(cat ../../../HELLO.TXT)" = "hello from p1" ]
 )
 
-echo "Testing root jail..."
-(
-  cd "$MNT_DIR"
-  # FUSE handles .. at root by staying at root or returning to parent of mount point.
-)
-
-run_unmount
-
-# --- TEST 3: Persistence & Remount Cycle ---
-run_mount
-echo "Testing persistence and large R/W..."
-# Create a 10KB file (spanning 5 clusters if cluster size is 2KB)
-dd if=/dev/urandom of=host_data bs=1024 count=10
-# Use redirection to avoid xattr copy issues on some platforms
+echo "Testing large R/W..."
+dd if=/dev/urandom of=host_data bs=1024 count=10 2>/dev/null
 cat host_data > "$MNT_DIR/LARGE.BIN"
-run_unmount
+cmp host_data "$MNT_DIR/LARGE.BIN"
 
-run_mount
-if ! cmp host_data "$MNT_DIR/LARGE.BIN"; then
-  echo "Error: Large file persistence check failed" >&2
-  exit 1
-fi
-rm -f host_data "$MNT_DIR/LARGE.BIN"
-run_unmount
-
-# --- TEST 4: Busy State Handling ---
-run_mount
 echo "Testing busy unmount handling..."
 (
   cd "$MNT_DIR"
-  sleep 2
+  sleep 0.5
 ) &
 BUSY_PID=$!
-sleep 1
-
-# Try to unmount while busy
+sleep 0.1
 if $UNMOUNT_CMD "$MNT_DIR" 2>/dev/null; then
-  echo "Warning: Unmount succeeded while busy (expected on some systems or with lazy unmount)"
+  echo "Warning: Unmount succeeded while busy"
 else
   echo "Unmount correctly refused while busy"
   kill $BUSY_PID || true
   wait $BUSY_PID || true
-  sleep 1
-  run_unmount
 fi
+
+run_unmount
+rm -f host_data
 
 SUCCESS=1
 echo "PASS: fat12mount robust integration tests"

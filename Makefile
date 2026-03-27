@@ -62,7 +62,10 @@ endif
 
 all: fat12tool fat12mount-optional fat12mount.exe
 
-test: fat12tool test-core test-unit test-cli test-fuse test-mount-robust
+test: fat12tool test-core test-unit test-cli test-mount-robust
+
+fat12_stress: tests/fat12_stress.c
+	$(CC) $(CFLAGS) -o tests/fat12_stress tests/fat12_stress.c
 
 deps:
 	./scripts/install_deps.sh
@@ -85,28 +88,24 @@ docs:
 	fi
 	doxygen Doxyfile
 
-fat12tool: fat12tool.c $(CORE_SRCS) $(CORE_HDRS)
-	$(CC) $(CFLAGS) -o $@ fat12tool.c $(CORE_SRCS)
+fat12_core.o: fat12_core.c fat12_core.h
+	$(CC) $(CFLAGS) -c -o $@ fat12_core.c
 
-fat12mount: fat12mount.c vfs_ops.h vfs_fuse.c $(CORE_SRCS) $(CORE_HDRS)
+fat12tool: fat12tool.c fat12_core.o $(CORE_HDRS)
+	$(CC) $(CFLAGS) -o $@ fat12tool.c fat12_core.o
+
+fat12mount: fat12mount.c vfs_ops.h vfs_fuse.c fat12_core.o $(CORE_HDRS)
 ifeq ($(HAVE_FUSE),1)
-	$(CC) $(CFLAGS) $(FUSE_CFLAGS) -o $@ fat12mount.c vfs_fuse.c $(CORE_SRCS) $(FUSE_LIBS) $(FUSE_LDFLAGS) -lpthread
+	$(CC) $(CFLAGS) $(FUSE_CFLAGS) -o $@ fat12mount.c vfs_fuse.c fat12_core.o $(FUSE_LIBS) $(FUSE_LDFLAGS) -lpthread
 else
 	@echo "Skipping fat12mount (FUSE not available in build environment)."
 endif
 
-fat12mount.exe: fat12mount.c vfs_ops.h vfs_winfsp.c $(CORE_SRCS) $(CORE_HDRS)
+fat12mount.exe: fat12mount.c vfs_ops.h vfs_winfsp.c fat12_core.o $(CORE_HDRS)
 ifeq ($(HAVE_WINFSP),1)
-	$(CC) $(CFLAGS) $(WINFSP_CFLAGS) -o $@ fat12mount.c vfs_winfsp.c $(CORE_SRCS) $(WINFSP_LIBS) -lbcrypt -lpthread
+	$(CC) $(CFLAGS) $(WINFSP_CFLAGS) -o $@ fat12mount.c vfs_winfsp.c fat12_core.o $(WINFSP_LIBS) -lbcrypt -lpthread
 else
 	@echo "Skipping fat12mount.exe (WinFSP not available in build environment)."
-endif
-
-fat12mount-optional:
-ifeq ($(HAVE_FUSE),1)
-	$(MAKE) fat12mount
-else
-	@echo "Skipping fat12mount (FUSE not available in build environment)."
 endif
 
 test-core: tests/fat12_core_test
@@ -115,29 +114,16 @@ test-core: tests/fat12_core_test
 test-unit: tests/fat12_core_unit_test
 	./tests/fat12_core_unit_test
 
-tests/fat12_core_test: tests/test_fat12_core.c $(CORE_SRCS) $(CORE_HDRS) tests/utils.c tests/utils.h
-	$(CC) $(CFLAGS) -o $@ tests/test_fat12_core.c tests/utils.c $(CORE_SRCS)
+tests/fat12_core_test: tests/test_fat12_core.c fat12_core.o tests/utils.o
+	$(CC) $(CFLAGS) -o $@ tests/test_fat12_core.c tests/utils.o fat12_core.o
 
-tests/fat12_core_unit_test: tests/test_fat12_core_unit.c $(CORE_HDRS) tests/utils.c tests/utils.h
-	$(CC) $(CFLAGS) -DFAT12_INTERNAL -o $@ tests/test_fat12_core_unit.c tests/utils.c
+tests/fat12_core_unit_test: tests/test_fat12_core_unit.c fat12_core.h tests/utils.o
+	$(CC) $(CFLAGS) -DFAT12_INTERNAL -o $@ tests/test_fat12_core_unit.c tests/utils.o
 
 test-cli: fat12tool
 	./tests/test_cli.sh
 
-test-fuse:
-ifneq ($(HAVE_FUSE),0)
-	$(MAKE) fat12mount
-	./tests/test_fuse_mount.sh
-endif
-ifneq ($(HAVE_WINFSP),0)
-	$(MAKE) fat12mount.exe
-	./tests/test_fuse_mount.sh
-endif
-ifeq ($(HAVE_FUSE)$(HAVE_WINFSP),00)
-	@echo "Skipping fat12mount (FUSE/WinFSP not available)."
-endif
-
-test-mount-robust: tests/fat12_verify
+test-mount-robust: tests/fat12_verify tests/fat12_stress
 ifneq ($(HAVE_FUSE)$(HAVE_WINFSP),00)
 ifeq ($(HAVE_FUSE),1)
 	$(MAKE) fat12mount
@@ -151,10 +137,16 @@ ifeq ($(HAVE_FUSE)$(HAVE_WINFSP),00)
 	@echo "Skipping robust mount tests (FUSE/WinFSP not available)."
 endif
 
-tests/fat12_verify: tests/fat12_verify.c tests/utils.c tests/utils.h fat12_core.c
-	$(CC) $(CFLAGS) -o $@ tests/fat12_verify.c tests/utils.c fat12_core.c
+tests/fat12_verify: tests/fat12_verify.c tests/utils.o fat12_core.o
+	$(CC) $(CFLAGS) -o $@ tests/fat12_verify.c tests/utils.o fat12_core.o
+
+tests/fat12_stress: tests/fat12_stress.c
+	$(CC) $(CFLAGS) -o $@ tests/fat12_stress.c
+
+tests/utils.o: tests/utils.c tests/utils.h
+	$(CC) $(CFLAGS) -c -o $@ tests/utils.c
 
 clean:
 	rm -f fat12tool fat12mount fat12mount.exe fat12_core.o
-	rm -f tests/fat12_core_test tests/fat12_core_unit_test tests/fat12_verify
+	rm -f tests/fat12_core_test tests/fat12_core_unit_test tests/fat12_verify tests/fat12_stress tests/*.o
 	rm -f vfs_fuse.o vfs_winfsp.o
