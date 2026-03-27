@@ -9,6 +9,9 @@
  * without spawning external processes, significantly speeding up tests on Windows.
  */
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-truncation"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -32,8 +35,8 @@
 #endif
 
 static int test_dir_stress(const char *mnt) {
-    char path[1024];
-    char sub[1024];
+    char path[2048];
+    char sub[2048];
     snprintf(sub, sizeof(sub), "%s/STRESS", mnt);
     
     printf("  Testing directory visibility stress (100 files) at %s...\n", sub);
@@ -43,7 +46,7 @@ static int test_dir_stress(const char *mnt) {
     }
 
     for (int i = 1; i <= 100; ++i) {
-        snprintf(path, sizeof(path), "%s/F_%d.TXT", sub, i);
+        snprintf(path, sizeof(path), "%s/F_%03d.TXT", sub, i);
         FILE *f = fopen(path, "wb");
         if (!f) {
             fprintf(stderr, "Failed to create %s: %s\n", path, strerror(errno));
@@ -77,8 +80,8 @@ static int test_dir_stress(const char *mnt) {
 }
 
 static int test_interleaved(const char *mnt) {
-    char path[1024];
-    char sub[1024];
+    char path[2048];
+    char sub[2048];
     snprintf(sub, sizeof(sub), "%s/CACHE", mnt);
     
     printf("  Testing interleaved modifications (50 files)...\n");
@@ -88,7 +91,7 @@ static int test_interleaved(const char *mnt) {
     }
 
     for (int i = 1; i <= 50; ++i) {
-        snprintf(path, sizeof(path), "%s/FILE_%d", sub, i);
+        snprintf(path, sizeof(path), "%s/FILE_%02d", sub, i);
         FILE *f = fopen(path, "wb");
         if (!f) return -1;
         fclose(f);
@@ -99,7 +102,7 @@ static int test_interleaved(const char *mnt) {
     }
 
     for (int i = 1; i <= 50; i += 2) {
-        snprintf(path, sizeof(path), "%s/FILE_%d", sub, i);
+        snprintf(path, sizeof(path), "%s/FILE_%02d", sub, i);
         if (unlink(path) != 0) {
             perror("unlink");
             return -1;
@@ -113,7 +116,7 @@ static int test_interleaved(const char *mnt) {
 }
 
 static int test_rename_truncate(const char *mnt) {
-    char p1[1024], p2[1024];
+    char p1[2048], p2[2048];
     snprintf(p1, sizeof(p1), "%s/REN_ME.TXT", mnt);
     snprintf(p2, sizeof(p2), "%s/RENAMED.TXT", mnt);
 
@@ -157,3 +160,5 @@ int main(int argc, char **argv) {
     printf("PASS: fat12_stress C-based integration checks\n");
     return 0;
 }
+
+#pragma GCC diagnostic pop

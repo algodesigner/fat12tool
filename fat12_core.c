@@ -1450,6 +1450,7 @@ int fat12_truncate(Fat12 *fs, const char *path, off_t size)
     r.entry.acc_date = r.entry.wrt_date;
     if (write_dir_entry_at(fs, r.offset, &r.entry) != 0)
         return -EIO;
+    fflush(fs->fp);
 
     return 0;
 }

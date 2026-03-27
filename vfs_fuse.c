@@ -271,6 +271,16 @@ static int fat12fs_open(const char *path, struct fuse_file_info *fi)
     int mode = fi->flags & O_ACCMODE;
     if (mode != O_RDONLY && mode != O_WRONLY && mode != O_RDWR)
         return -EACCES;
+
+    if (fi->flags & O_TRUNC) {
+        ctx = ctx_from_fuse();
+        pthread_mutex_lock(&ctx->lock);
+        rc = fat12_truncate(&ctx->fs, path, 0);
+        pthread_mutex_unlock(&ctx->lock);
+        if (rc != 0)
+            return rc;
+    }
+
     return 0;
 }
 
