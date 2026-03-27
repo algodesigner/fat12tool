@@ -4,6 +4,8 @@ fat12tool.exe
 fat12mount
 fat12mount.exe
 fat12_core_test
+fat12_core_unit_test
+fat12_verify
 fat12_core_test.exe
 fat12_core_test_debug.exe
 *.o
