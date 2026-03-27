@@ -7,12 +7,17 @@
 CC ?= gcc
 CFLAGS ?= -std=c11 -Wall -Wextra -Wpedantic -O2
 
+PREFIX ?= /usr/local
+BINDIR = $(DESTDIR)$(PREFIX)/bin
+
 CORE_SRCS = fat12_core.c
 CORE_HDRS = fat12_core.h
 
 UNAME_S := $(shell uname -s)
+EXE :=
 ifeq ($(OS),Windows_NT)
   UNAME_S := Windows
+  EXE := .exe
 endif
 
 FUSE3_CFLAGS := $(shell pkg-config --cflags fuse3 2>/dev/null)
@@ -60,9 +65,24 @@ else
   HAVE_WINFSP := 0
 endif
 
-all: fat12tool fat12mount fat12mount.exe
+all: fat12tool$(EXE) fat12mount fat12mount.exe
 
-test: fat12tool test-core test-unit test-cli test-mount-robust
+install: all
+	mkdir -p $(BINDIR)
+	install -m 755 fat12tool$(EXE) $(BINDIR)/fat12tool$(EXE)
+ifeq ($(HAVE_FUSE),1)
+	install -m 755 fat12mount $(BINDIR)/fat12mount
+endif
+ifeq ($(HAVE_WINFSP),1)
+	install -m 755 fat12mount.exe $(BINDIR)/fat12mount.exe
+endif
+
+uninstall:
+	rm -f $(BINDIR)/fat12tool$(EXE)
+	rm -f $(BINDIR)/fat12mount
+	rm -f $(BINDIR)/fat12mount.exe
+
+test: fat12tool$(EXE) test-core test-unit test-cli test-mount-robust
 
 fat12_stress: tests/fat12_stress.c
 	$(CC) $(CFLAGS) -o tests/fat12_stress tests/fat12_stress.c
@@ -91,7 +111,7 @@ docs:
 fat12_core.o: fat12_core.c fat12_core.h
 	$(CC) $(CFLAGS) -c -o $@ fat12_core.c
 
-fat12tool: fat12tool.c fat12_core.o $(CORE_HDRS)
+fat12tool$(EXE): fat12tool.c fat12_core.o $(CORE_HDRS)
 	$(CC) $(CFLAGS) -o $@ fat12tool.c fat12_core.o
 
 fat12mount: fat12mount.c vfs_ops.h vfs_fuse.c fat12_core.o $(CORE_HDRS)
@@ -120,7 +140,7 @@ tests/fat12_core_test: tests/test_fat12_core.c fat12_core.o tests/utils.o
 tests/fat12_core_unit_test: tests/test_fat12_core_unit.c fat12_core.h tests/utils.o
 	$(CC) $(CFLAGS) -DFAT12_INTERNAL -o $@ tests/test_fat12_core_unit.c tests/utils.o
 
-test-cli: fat12tool
+test-cli: fat12tool$(EXE)
 	./tests/test_cli.sh
 
 test-mount-robust: tests/fat12_verify tests/fat12_stress
@@ -147,6 +167,6 @@ tests/utils.o: tests/utils.c tests/utils.h
 	$(CC) $(CFLAGS) -c -o $@ tests/utils.c
 
 clean:
-	rm -f fat12tool fat12mount fat12mount.exe fat12_core.o
+	rm -f fat12tool$(EXE) fat12mount fat12mount.exe fat12_core.o
 	rm -f tests/fat12_core_test tests/fat12_core_unit_test tests/fat12_verify tests/fat12_stress tests/*.o
 	rm -f vfs_fuse.o vfs_winfsp.o
