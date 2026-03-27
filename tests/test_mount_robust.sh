@@ -40,8 +40,14 @@ cleanup() {
   else
     if [ "$OS" = "Darwin" ] || [ "$OS" = "Linux" ]; then
       if mount | grep -q "on $MNT_DIR "; then
-        $UNMOUNT_CMD "$MNT_DIR" >/dev/null 2>&1 || true
-        sleep 1
+        max_retries=3
+        r=0
+        while [ "$r" -lt "$max_retries" ]; do
+          if [ "$OS" = "Darwin" ] && diskutil unmount "$MNT_DIR" >/dev/null 2>&1; then break; fi
+          if $UNMOUNT_CMD "$MNT_DIR" >/dev/null 2>&1; then break; fi
+          r=$((r + 1))
+          sleep 1
+        done
       fi
     fi
   fi
@@ -96,7 +102,36 @@ run_mount() {
 
 run_unmount() {
   echo "Unmounting $MNT_DIR..."
-  $UNMOUNT_CMD "$MNT_DIR"
+  
+  max_retries=5
+  retry_count=0
+  unmounted=0
+  
+  while [ "$retry_count" -lt "$max_retries" ]; do
+    if [ "$OS" = "Darwin" ]; then
+      if diskutil unmount "$MNT_DIR" >/dev/null 2>&1; then
+        unmounted=1
+        break
+      fi
+    fi
+    
+    if $UNMOUNT_CMD "$MNT_DIR" >/dev/null 2>&1; then
+      unmounted=1
+      break
+    fi
+    
+    retry_count=$((retry_count + 1))
+    echo "Unmount failed (busy?), retrying in 1s... ($retry_count/$max_retries)"
+    sleep 1
+  done
+
+  if [ "$unmounted" -ne 1 ]; then
+    echo "Error: Failed to unmount $MNT_DIR after $max_retries attempts" >&2
+    if [ "$OS" = "Darwin" ] || [ "$OS" = "Linux" ]; then
+      lsof "$MNT_DIR" || true
+    fi
+    exit 1
+  fi
   
   # Verify process exit
   i=0
@@ -162,6 +197,7 @@ else
   echo "Unmount correctly refused while busy"
   kill $BUSY_PID || true
   wait $BUSY_PID || true
+  sleep 1
 fi
 
 run_unmount

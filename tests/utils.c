@@ -13,13 +13,26 @@
 #include "utils.h"
 #include "../fat12_core.h"
 
+#ifdef _WIN32
+#include <process.h>
+#ifndef fseeko
+#define fseeko _fseeki64
+#endif
+#ifndef ftello
+#define ftello _ftelli64
+#endif
+#define getpid _getpid
+#else
+#include <unistd.h>
+#endif
+
 #include <errno.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdarg.h>
 #include <string.h>
 #include <time.h>
-#include <unistd.h>
 
 /* Internal structures matching fat12_core.c */
 #pragma pack(push, 1)
@@ -66,7 +79,7 @@ typedef struct {
  */
 static int read_at(FILE *fp, uint64_t off, void *buf, size_t len)
 {
-    if (fseek(fp, (long)off, SEEK_SET) != 0)
+    if (fseeko(fp, (off_t)off, SEEK_SET) != 0)
         return -1;
     return fread(buf, 1, len, fp) == len ? 0 : -1;
 }
@@ -81,10 +94,25 @@ static int read_at(FILE *fp, uint64_t off, void *buf, size_t len)
  */
 static int write_at(FILE *fp, uint64_t off, const void *buf, size_t len)
 {
-    if (fseek(fp, (long)off, SEEK_SET) != 0)
+    if (fseeko(fp, (off_t)off, SEEK_SET) != 0)
         return -1;
     return fwrite(buf, 1, len, fp) == len ? 0 : -1;
 }
+
+#if defined(_WIN32) && !defined(__MINGW32__)
+static int asprintf(char **strp, const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    int len = _vscprintf(fmt, ap);
+    if (len < 0) return -1;
+    *strp = (char *)malloc(len + 1);
+    if (!*strp) return -1;
+    int r = vsprintf(*strp, fmt, ap);
+    va_end(ap);
+    return r;
+}
+#endif
 
 /**
  * @brief Calculates the number of sectors required for the FAT.

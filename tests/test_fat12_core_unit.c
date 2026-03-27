@@ -19,9 +19,21 @@
 /* Include the source file to access internal functions */
 #include "../fat12_core.c"
 
+#ifdef _WIN32
+#include <process.h>
+#define getpid _getpid
+#else
+#include <unistd.h>
+#endif
+
 #include <stdio.h>
 #include <string.h>
-#include <unistd.h>
+
+static void make_temp_path(char *out, const char *prefix)
+{
+    static int counter = 0;
+    sprintf(out, "%s-%d-%d.img", prefix, (int)getpid(), counter++);
+}
 
 /**
  * @brief Verifies name conversion between printable strings and FAT 8.3 format.
@@ -79,11 +91,8 @@ static int test_name_conversion(void)
  */
 static int test_fat_operations(void)
 {
-    char path[] = "fat12-unit-test-XXXXXX";
-    int fd = mkstemp(path);
-    TEST_CHECK(fd >= 0, "mkstemp failed");
-    close(fd);
-    unlink(path);  /* Remove the empty file, test_create_fat12_image will create it */
+    char path[256];
+    make_temp_path(path, "fat12-unit-test");
 
     /* Create a minimal FAT12 image (1MB, 1 sector per cluster) */
     TEST_CHECK(test_create_fat12_image(path, 1, 1) == 0, "create test image failed");
@@ -128,11 +137,8 @@ static int test_fat_operations(void)
  */
 static int test_directory_operations(void)
 {
-    char path[] = "fat12-dir-unit-test-XXXXXX";
-    int fd = mkstemp(path);
-    TEST_CHECK(fd >= 0, "mkstemp failed");
-    close(fd);
-    unlink(path);
+    char path[256];
+    make_temp_path(path, "fat12-dir-unit-test");
 
     TEST_CHECK(test_create_fat12_image(path, 1, 1) == 0, "create test image failed");
 
@@ -173,11 +179,8 @@ static int test_directory_operations(void)
  */
 static int test_path_resolution(void)
 {
-    char path[] = "fat12-path-unit-test-XXXXXX";
-    int fd = mkstemp(path);
-    TEST_CHECK(fd >= 0, "mkstemp failed");
-    close(fd);
-    unlink(path);
+    char path[256];
+    make_temp_path(path, "fat12-path-unit-test");
 
     TEST_CHECK(test_create_fat12_image(path, 1, 1) == 0, "create test image failed");
 
@@ -222,11 +225,8 @@ static int test_path_resolution(void)
  */
 static int test_cluster_management(void)
 {
-    char path[] = "fat12-cluster-unit-test-XXXXXX";
-    int fd = mkstemp(path);
-    TEST_CHECK(fd >= 0, "mkstemp failed");
-    close(fd);
-    unlink(path);
+    char path[256];
+    make_temp_path(path, "fat12-cluster-unit-test");
 
     TEST_CHECK(test_create_fat12_image(path, 1, 1) == 0, "create test image failed");
 

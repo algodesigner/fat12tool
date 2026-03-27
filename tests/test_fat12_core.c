@@ -12,12 +12,18 @@
 #include "../fat12_core.h"
 #include "utils.h"
 
+#ifdef _WIN32
+#include <process.h>
+#define getpid _getpid
+#else
+#include <unistd.h>
+#endif
+
 #include <errno.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 
 #define CHECK(cond, msg)                                              \
     do {                                                              \
