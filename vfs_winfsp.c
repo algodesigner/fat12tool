@@ -190,15 +190,15 @@ static int fat12fs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
     (void)fi;
     Fat12Ctx *ctx = ctx_from_fuse();
 
-    if (off > 0)
-        return 0;
-
     ReaddirState state = {buf, filler, off, 0};
 
-    if (filler(buf, ".", NULL, 1) != 0)
-        return 0;
-    if (filler(buf, "..", NULL, 2) != 0)
-        return 0;
+    if (off == 0) {
+        if (filler(buf, ".", NULL, 1) != 0)
+            return 0;
+        if (filler(buf, "..", NULL, 2) != 0)
+            return 0;
+        state.next_off = 2;
+    }
 
     pthread_mutex_lock(&ctx->lock);
     int rc = fat12_list(&ctx->fs, path, list_cb, &state);

@@ -7,6 +7,8 @@ fat12_core_test
 fat12_core_unit_test
 fat12_verify
 fat12_core_test.exe
+fat12_core_unit_test.exe
+fat12_verify.exe
 fat12_core_test_debug.exe
 *.o
 vfs_*.o

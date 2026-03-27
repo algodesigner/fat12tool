@@ -138,12 +138,17 @@ ifeq ($(HAVE_FUSE)$(HAVE_WINFSP),00)
 endif
 
 test-mount-robust: tests/fat12_verify
-ifneq ($(HAVE_FUSE),0)
+ifneq ($(HAVE_FUSE)$(HAVE_WINFSP),00)
+ifeq ($(HAVE_FUSE),1)
 	$(MAKE) fat12mount
+endif
+ifeq ($(HAVE_WINFSP),1)
+	$(MAKE) fat12mount.exe
+endif
 	./tests/test_mount_robust.sh
 endif
-ifeq ($(HAVE_FUSE),0)
-	@echo "Skipping robust mount tests (FUSE not available)."
+ifeq ($(HAVE_FUSE)$(HAVE_WINFSP),00)
+	@echo "Skipping robust mount tests (FUSE/WinFSP not available)."
 endif
 
 tests/fat12_verify: tests/fat12_verify.c tests/utils.c tests/utils.h fat12_core.c

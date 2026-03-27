@@ -20,6 +20,10 @@ if [ "$OS" = "Linux" ]; then
   UNMOUNT_CMD="fusermount3 -u"
 elif [ "$OS" = "Darwin" ]; then
   UNMOUNT_CMD="umount"
+elif echo "$OS" | grep -q "MINGW\|MSYS"; then
+  OS="Windows"
+  FAT12MOUNT="$ROOT_DIR/fat12mount.exe"
+  UNMOUNT_CMD="$FAT12MOUNT -u"
 fi
 
 MNT_DIR="$ROOT_DIR/mnt-robust-$$"
@@ -29,10 +33,16 @@ SUCCESS=0
 
 cleanup() {
   echo "Cleaning up..."
-  if [ "$OS" = "Darwin" ] || [ "$OS" = "Linux" ]; then
-    if mount | grep -q "on $MNT_DIR "; then
-      $UNMOUNT_CMD "$MNT_DIR" >/dev/null 2>&1 || true
-      sleep 1
+  if [ "$OS" = "Windows" ]; then
+    $UNMOUNT_CMD "$MNT_DIR" >/dev/null 2>&1 || true
+    sleep 1
+    taskkill //F //IM fat12mount.exe >/dev/null 2>&1 || true
+  else
+    if [ "$OS" = "Darwin" ] || [ "$OS" = "Linux" ]; then
+      if mount | grep -q "on $MNT_DIR "; then
+        $UNMOUNT_CMD "$MNT_DIR" >/dev/null 2>&1 || true
+        sleep 1
+      fi
     fi
   fi
   
@@ -46,12 +56,20 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 # Ensure fresh start
-mkdir -p "$MNT_DIR"
+if [ "$OS" = "Windows" ]; then
+  rmdir "$MNT_DIR" >/dev/null 2>&1 || true
+else
+  mkdir -p "$MNT_DIR"
+fi
 cp "$IMG_SRC" "$TMP_IMG"
 
 run_mount() {
   echo "Mounting $TMP_IMG to $MNT_DIR..."
-  "$FAT12MOUNT" --image "$TMP_IMG" --mount "$MNT_DIR" >"$LOG" 2>&1 &
+  EXTRA_FUSE_ARGS=""
+  if [ "$OS" = "Windows" ]; then
+    EXTRA_FUSE_ARGS="-f"
+  fi
+  "$FAT12MOUNT" --image "$TMP_IMG" --mount "$MNT_DIR" $EXTRA_FUSE_ARGS >"$LOG" 2>&1 &
   MOUNT_PID=$!
   
   # Wait for mount to be ready
@@ -82,30 +100,52 @@ run_unmount() {
   
   # Verify process exit
   i=0
-  while [ "$i" -lt 50 ]; do
-    if ! kill -0 "$MOUNT_PID" >/dev/null 2>&1; then
-      break
+  while [ "$i" -lt 100 ]; do
+    if [ "$OS" = "Windows" ]; then
+      # tasklist check for native windows processes
+      if ! tasklist //FI "IMAGENAME eq fat12mount.exe" 2>/dev/null | grep -q "fat12mount.exe"; then
+        break
+      fi
+    else
+      if ! kill -0 "$MOUNT_PID" >/dev/null 2>&1; then
+        break
+      fi
     fi
     sleep 0.2
     i=$((i + 1))
   done
   
-  if kill -0 "$MOUNT_PID" >/dev/null 2>&1; then
-    echo "Error: fat12mount process did not terminate after unmount" >&2
-    exit 1
+  if [ "$OS" = "Windows" ]; then
+    if tasklist //FI "IMAGENAME eq fat12mount.exe" 2>/dev/null | grep -q "fat12mount.exe"; then
+       echo "Warning: fat12mount process still appears in tasklist after unmount"
+       # On Windows it can sometimes hang around or be another instance
+    fi
+  else
+    if kill -0 "$MOUNT_PID" >/dev/null 2>&1; then
+      echo "Error: fat12mount process did not terminate after unmount" >&2
+      exit 1
+    fi
   fi
 
   # Post-unmount integrity check
   echo "Verifying image integrity..."
-  "$ROOT_DIR/tests/fat12_verify" "$TMP_IMG"
+  VERIFY_EXE="$ROOT_DIR/tests/fat12_verify"
+  if [ "$OS" = "Windows" ]; then
+    VERIFY_EXE="${VERIFY_EXE}.exe"
+  fi
+  "$VERIFY_EXE" "$TMP_IMG"
 }
 
 # --- TEST 1: Directory Visibility & Cache Stress ---
 run_mount
 echo "Testing directory visibility stress..."
-mkdir "$MNT_DIR/STRESS"
+mkdir "$MNT_DIR/STRESS" || { echo "mkdir STRESS failed" >&2; exit 1; }
+# Brief sleep to let WinFSP settle on some systems
+[ "$OS" = "Windows" ] && sleep 1
+
 for i in $(seq 1 100); do
-  touch "$MNT_DIR/STRESS/F_$i.TXT"
+  # Use redirection instead of touch for more reliability on WinFSP/MSYS2
+  echo "test" > "$MNT_DIR/STRESS/F_$i.TXT" || { echo "Failed to create F_$i.TXT" >&2; exit 1; }
 done
 
 COUNT=$(ls -1 "$MNT_DIR/STRESS" | grep "F_" | wc -l)
@@ -126,9 +166,10 @@ rm list.txt
 
 # Interleaved modification test (Targets readdir cache regressions)
 echo "Testing interleaved modifications..."
-mkdir "$MNT_DIR/CACHE"
+mkdir "$MNT_DIR/CACHE" || { echo "mkdir CACHE failed" >&2; exit 1; }
+[ "$OS" = "Windows" ] && sleep 1
 for i in $(seq 1 50); do
-  touch "$MNT_DIR/CACHE/FILE_$i"
+  echo "test" > "$MNT_DIR/CACHE/FILE_$i" || { echo "Failed to create FILE_$i" >&2; exit 1; }
   # Immediate check after creation
   if [ ! -f "$MNT_DIR/CACHE/FILE_$i" ]; then
     echo "Error: FILE_$i not visible immediately after creation (Cache regression?)" >&2

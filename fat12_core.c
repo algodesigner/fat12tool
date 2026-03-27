@@ -19,6 +19,15 @@
 
 #include "fat12_core.h"
 
+#ifdef _WIN32
+#ifndef fseeko
+#define fseeko _fseeki64
+#endif
+#ifndef ftello
+#define ftello _ftelli64
+#endif
+#endif
+
 #include <ctype.h>
 #include <errno.h>
 #include <stdio.h>
