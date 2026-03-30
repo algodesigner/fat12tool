@@ -119,7 +119,7 @@ typedef struct {
  * @return 0 to continue iteration, non-zero to stop early.
  */
 typedef int (*fat12_list_cb)(
-        const char *name, int is_dir, uint32_t size, void *user);
+        const char *name, const Fat12Node *node, void *user);
 
 /**
  * @brief Opens a FAT12 volume from an image path.

@@ -207,14 +207,33 @@ static int fat12_readdir_add(
     return 0;
 }
 
-static int list_cb(const char *name, int is_dir, uint32_t size, void *user)
+static int list_cb(const char *name, const Fat12Node *node, void *user)
 {
     ReaddirState *state = user;
     struct stat st;
     memset(&st, 0, sizeof(st));
-    st.st_mode = (is_dir ? (S_IFDIR | 0755) : (S_IFREG | 0644));
-    st.st_nlink = is_dir ? 2 : 1;
-    st.st_size = (off_t)size;
+    st.st_mode = (node->is_dir ? (S_IFDIR | 0755) : (S_IFREG | 0644));
+    st.st_nlink = node->is_dir ? 2 : 1;
+    st.st_size = (off_t)node->size;
+    if (node->first_cluster != 0)
+        st.st_ino = node->first_cluster;
+
+    struct timespec ts;
+    fat_time_to_timespec(node->wrt_time, node->wrt_date, &ts);
+#if defined(__linux__)
+    st.st_mtim = ts;
+    st.st_atim = ts;
+    st.st_ctim = ts;
+#elif defined(__APPLE__)
+    st.st_mtimespec = ts;
+    st.st_atimespec = ts;
+    st.st_ctimespec = ts;
+#else
+    st.st_mtime = ts.tv_sec;
+    st.st_atime = ts.tv_sec;
+    st.st_ctime = ts.tv_sec;
+#endif
+
     if (fat12_readdir_add(state, name, &st) != 0)
         return 1;
     return 0;

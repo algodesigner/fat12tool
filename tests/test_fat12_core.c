@@ -111,15 +111,14 @@ typedef struct {
     int found_testdir;
 } RootScan;
 
-static int root_list_cb(const char *name, int is_dir, uint32_t size, void *user)
+static int root_list_cb(const char *name, const Fat12Node *node, void *user)
 {
-    (void)size;
     RootScan *scan = (RootScan *)user;
     if (strcmp(name, "README.TXT") == 0)
         scan->found_readme = 1;
     if (strcmp(name, "HELLO.TXT") == 0)
         scan->found_hello = 1;
-    if (strcmp(name, "TESTDIR") == 0 && is_dir)
+    if (strcmp(name, "TESTDIR") == 0 && node->is_dir)
         scan->found_testdir = 1;
     return 0;
 }
@@ -132,23 +131,21 @@ typedef struct {
     int found_testdir;
 } TraversalState;
 
-static int traversal_list_cb(const char *name, int is_dir, uint32_t size, void *user)
+static int traversal_list_cb(const char *name, const Fat12Node *node, void *user)
 {
-    (void)size;
     TraversalState *s = (TraversalState *)user;
     s->count++;
     if (strcmp(name, "README.TXT") == 0) s->found_readme = 1;
     if (strcmp(name, "HELLO.TXT") == 0) s->found_hello = 1;
-    if (strcmp(name, "TESTDIR") == 0 && is_dir) s->found_testdir = 1;
+    if (strcmp(name, "TESTDIR") == 0 && node->is_dir) s->found_testdir = 1;
     return 0;
 }
 
 /* Simple counter callback */
-static int count_list_cb(const char *name, int is_dir, uint32_t size, void *user)
+static int count_list_cb(const char *name, const Fat12Node *node, void *user)
 {
     (void)name;
-    (void)is_dir;
-    (void)size;
+    (void)node;
     (*(int *)user)++;
     return 0;
 }

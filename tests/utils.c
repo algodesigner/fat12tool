@@ -388,8 +388,8 @@ static void set_fat_entry_raw(uint8_t *fat, size_t fat_size, uint16_t cluster, u
  * @param user Pointer to an integer counter.
  * @return Returns 0 to continue enumeration.
  */
-static int count_cb(const char *name, int is_dir, uint32_t size, void *user) {
-    (void)name; (void)is_dir; (void)size;
+static int count_cb(const char *name, const Fat12Node *node, void *user) {
+    (void)name; (void)node;
     (*(int *)user)++;
     return 0;
 }

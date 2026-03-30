@@ -91,15 +91,23 @@ static void normalize_path(
 /**
  * @brief Callback for listing directory entries.
  * @param name Entry name.
- * @param is_dir Non-zero if entry is a directory.
- * @param size File size.
+ * @param node Node metadata.
  * @param user Callback user data.
  * @return 0 to continue iteration.
  */
-static int list_cb(const char *name, int is_dir, uint32_t size, void *user)
+static int list_cb(const char *name, const Fat12Node *node, void *user)
 {
     (void)user;
-    printf("%-14s %s %10u\n", name, is_dir ? "<DIR>" : "     ", size);
+    int year = ((node->wrt_date >> 9) & 0x7F) + 1980;
+    int month = (node->wrt_date >> 5) & 0x0F;
+    int day = node->wrt_date & 0x1F;
+    int hour = (node->wrt_time >> 11) & 0x1F;
+    int min = (node->wrt_time >> 5) & 0x3F;
+    int sec = (node->wrt_time & 0x1F) * 2;
+
+    printf("%-14s %s %10u %04d-%02d-%02d %02d:%02d:%02d\n",
+            name, node->is_dir ? "<DIR>" : "     ", node->size,
+            year, month, day, hour, min, sec);
     return 0;
 }
 

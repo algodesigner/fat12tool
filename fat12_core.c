@@ -1056,8 +1056,16 @@ int fat12_list(Fat12 *fs, const char *path, fat12_list_cb cb, void *user)
                 continue;
             char name[20];
             short_name_to_str(e.name, name, sizeof(name));
-            if (cb(name, (e.attr & ATTR_DIRECTORY) != 0, e.file_size, user) !=
-                    0)
+            Fat12Node node;
+            memset(&node, 0, sizeof(node));
+            node.is_dir = (e.attr & ATTR_DIRECTORY) != 0;
+            node.mode = node.is_dir ? (S_IFDIR | 0755) : (S_IFREG | 0644);
+            node.size = e.file_size;
+            node.first_cluster = e.first_cluster_lo;
+            node.wrt_time = e.wrt_time;
+            node.wrt_date = e.wrt_date;
+            node.attr = e.attr;
+            if (cb(name, &node, user) != 0)
                 break;
         }
         return 0;
@@ -1079,8 +1087,16 @@ int fat12_list(Fat12 *fs, const char *path, fat12_list_cb cb, void *user)
                 continue;
             char name[20];
             short_name_to_str(e.name, name, sizeof(name));
-            if (cb(name, (e.attr & ATTR_DIRECTORY) != 0, e.file_size, user) !=
-                    0)
+            Fat12Node node;
+            memset(&node, 0, sizeof(node));
+            node.is_dir = (e.attr & ATTR_DIRECTORY) != 0;
+            node.mode = node.is_dir ? (S_IFDIR | 0755) : (S_IFREG | 0644);
+            node.size = e.file_size;
+            node.first_cluster = e.first_cluster_lo;
+            node.wrt_time = e.wrt_time;
+            node.wrt_date = e.wrt_date;
+            node.attr = e.attr;
+            if (cb(name, &node, user) != 0)
                 return 0;
         }
         uint16_t nx = fat_get(fs, c);
