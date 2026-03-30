@@ -19,7 +19,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <time.h>
+#include <utime.h>
 
 #define MAX_PATH_LEN 8192
 
@@ -458,6 +460,14 @@ int main(int argc, char **argv)
             if (write_host_file(args[2], buf, node.size) != 0) {
                 fprintf(stderr, "read: failed to write host file %s\n",
                         args[2]);
+            } else {
+                // Preserve attributes
+                time_t mtime = fat12_fat_to_time_t(node.wrt_time, node.wrt_date);
+                struct utimbuf times = {mtime, mtime};
+                utime(args[2], &times);
+                if (node.attr & ATTR_READ_ONLY) {
+                    chmod(args[2], 0444);
+                }
             }
             free(buf);
             continue;
@@ -465,6 +475,11 @@ int main(int argc, char **argv)
         if (strcmp(args[0], "write") == 0) {
             if (ac < 3) {
                 fprintf(stderr, "write: usage write <host> <img>\n");
+                continue;
+            }
+            struct stat hst;
+            if (stat(args[1], &hst) != 0) {
+                fprintf(stderr, "write: cannot stat host file %s\n", args[1]);
                 continue;
             }
             uint8_t *data;
@@ -491,6 +506,22 @@ int main(int argc, char **argv)
 
             if (fat12_write(&fs, path, data, len, 0) != (ssize_t)len) {
                 fprintf(stderr, "write: failed to write to image %s\n", path);
+            } else {
+                // Preserve attributes
+                fat12_utimens(&fs, path, hst.st_mtime);
+                uint8_t attr = ATTR_ARCHIVE;
+                if (!(hst.st_mode & S_IWUSR))
+                    attr |= ATTR_READ_ONLY;
+
+                const char *filename = strrchr(args[1], '/');
+                if (filename)
+                    filename++;
+                else
+                    filename = args[1];
+                if (filename[0] == '.')
+                    attr |= ATTR_HIDDEN;
+
+                fat12_set_attr(&fs, path, attr);
             }
             free(data);
             continue;

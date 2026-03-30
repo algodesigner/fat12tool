@@ -56,6 +56,14 @@ typedef struct {
 } Fat12BootSector;
 #pragma pack(pop)
 
+#define ATTR_READ_ONLY 0x01
+#define ATTR_HIDDEN    0x02
+#define ATTR_SYSTEM    0x04
+#define ATTR_VOLUME_ID 0x08
+#define ATTR_DIRECTORY 0x10
+#define ATTR_ARCHIVE   0x20
+#define ATTR_LFN       0x0F
+
 /**
  * @brief Runtime FAT12 filesystem handle.
  *
@@ -247,6 +255,45 @@ int fat12_truncate(Fat12 *fs, const char *path, off_t size);
  * @return 0 on success, negative errno-style code on failure.
  */
 int fat12_utimens_now(Fat12 *fs, const char *path);
+
+/**
+ * @brief Updates access/write timestamps to a specific local time.
+ *
+ * @param fs    Open filesystem handle.
+ * @param path  Absolute file or directory path.
+ * @param mtime Modification time to set.
+ * @return 0 on success, negative errno-style code on failure.
+ */
+int fat12_utimens(Fat12 *fs, const char *path, time_t mtime);
+
+/**
+ * @brief Sets directory entry attributes.
+ *
+ * @param fs   Open filesystem handle.
+ * @param path Absolute file or directory path.
+ * @param attr Attribute byte to set.
+ * @return 0 on success, negative errno-style code on failure.
+ */
+int fat12_set_attr(Fat12 *fs, const char *path, uint8_t attr);
+
+/**
+ * @brief Converts FAT date/time fields to a standard `time_t`.
+ *
+ * @param fat_time FAT encoded time.
+ * @param fat_date FAT encoded date.
+ * @return `time_t` representation.
+ */
+time_t fat12_fat_to_time_t(uint16_t fat_time, uint16_t fat_date);
+
+/**
+ * @brief Converts `time_t` to FAT date/time fields.
+ *
+ * @param t_in     Input time.
+ * @param fat_time Output FAT encoded time.
+ * @param fat_date Output FAT encoded date.
+ */
+void fat12_time_t_to_fat(time_t t_in, uint16_t *fat_time, uint16_t *fat_date);
+
 
 /**
  * @brief Renames or moves a file or directory.

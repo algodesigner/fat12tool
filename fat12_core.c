@@ -38,9 +38,6 @@
 #include <time.h>
 
 #define FAT12_EOC 0x0FF8 /**< End of chain marker. */
-#define ATTR_DIRECTORY 0x10 /**< Directory attribute bit. */
-#define ATTR_VOLUME_ID 0x08 /**< Volume ID attribute bit. */
-#define ATTR_LFN 0x0F /**< Long File Name attribute bit. */
 
 #pragma pack(push, 1)
 /**
@@ -369,14 +366,14 @@ static int write_dir_entry_at(Fat12 *fs, uint64_t off, const DirEntry *e)
 }
 
 /**
- * @brief Encodes current local wall-clock time into FAT date/time fields.
+ * @brief Converts `time_t` to FAT date/time fields.
+ * @param t_in Time to encode.
  * @param out_time Output FAT time field.
  * @param out_date Output FAT date field.
  */
-static void fat_time_date(uint16_t *out_time, uint16_t *out_date)
+void fat12_time_t_to_fat(time_t t_in, uint16_t *out_time, uint16_t *out_date)
 {
-    time_t now = time(NULL);
-    struct tm *tmv = localtime(&now);
+    struct tm *tmv = localtime(&t_in);
     uint16_t t = 0;
     uint16_t d = 0;
     if (tmv) {
@@ -390,6 +387,48 @@ static void fat_time_date(uint16_t *out_time, uint16_t *out_date)
     }
     *out_time = t;
     *out_date = d;
+}
+
+/**
+ * @brief Converts FAT date/time fields to a standard `time_t`.
+ * @param fat_time FAT encoded time.
+ * @param fat_date FAT encoded date.
+ * @return `time_t` representation.
+ */
+time_t fat12_fat_to_time_t(uint16_t fat_time, uint16_t fat_date)
+{
+    struct tm tmv;
+    memset(&tmv, 0, sizeof(tmv));
+
+    int year = ((fat_date >> 9) & 0x7F) + 1980;
+    int mon = (fat_date >> 5) & 0x0F;
+    int day = fat_date & 0x1F;
+    int hour = (fat_time >> 11) & 0x1F;
+    int min = (fat_time >> 5) & 0x3F;
+    int sec = (fat_time & 0x1F) * 2;
+
+    if (mon < 1) mon = 1;
+    if (day < 1) day = 1;
+
+    tmv.tm_year = year - 1900;
+    tmv.tm_mon = mon - 1;
+    tmv.tm_mday = day;
+    tmv.tm_hour = hour;
+    tmv.tm_min = min;
+    tmv.tm_sec = sec;
+    tmv.tm_isdst = -1;
+
+    return mktime(&tmv);
+}
+
+/**
+ * @brief Encodes current local wall-clock time into FAT date/time fields.
+ * @param out_time Output FAT time field.
+ * @param out_date Output FAT date field.
+ */
+static void fat_time_date(uint16_t *out_time, uint16_t *out_date)
+{
+    fat12_time_t_to_fat(time(NULL), out_time, out_date);
 }
 
 /**
@@ -1480,14 +1519,41 @@ int fat12_truncate(Fat12 *fs, const char *path, off_t size)
  */
 int fat12_utimens_now(Fat12 *fs, const char *path)
 {
+    return fat12_utimens(fs, path, time(NULL));
+}
+
+/*
+ * @brief Updates access/write timestamps to a specific local time.
+ */
+int fat12_utimens(Fat12 *fs, const char *path, time_t mtime)
+{
     if (!path || path[0] != '/')
         return -EINVAL;
 
     EntryRef r;
     if (resolve_abs_path(fs, path, &r, NULL, NULL, 0) != 0 || !r.found)
         return -ENOENT;
-    fat_time_date(&r.entry.wrt_time, &r.entry.wrt_date);
+
+    fat12_time_t_to_fat(mtime, &r.entry.wrt_time, &r.entry.wrt_date);
     r.entry.acc_date = r.entry.wrt_date;
+    if (write_dir_entry_at(fs, r.offset, &r.entry) != 0)
+        return -EIO;
+    return 0;
+}
+
+/*
+ * @brief Sets directory entry attributes.
+ */
+int fat12_set_attr(Fat12 *fs, const char *path, uint8_t attr)
+{
+    if (!path || path[0] != '/')
+        return -EINVAL;
+
+    EntryRef r;
+    if (resolve_abs_path(fs, path, &r, NULL, NULL, 0) != 0 || !r.found)
+        return -ENOENT;
+
+    r.entry.attr = attr;
     if (write_dir_entry_at(fs, r.offset, &r.entry) != 0)
         return -EIO;
     return 0;

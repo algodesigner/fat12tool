@@ -17,6 +17,7 @@ The code is split into:
 - Create/remove files and directories
 - Truncate files
 - Persist metadata updates (write/access timestamps)
+- Preserve file attributes (timestamps, read-only, hidden) on host-image roundtrips
 - Open FAT12 at offset `0` (partition image) or at MBR partition offset (`--partition N`)
 - Cross-platform: works on Linux, macOS, and Windows
 
@@ -103,17 +104,17 @@ Alternatively, you can use system tools:
 
 Commands:
 
-- `ls [path]`
+- `ls [path]` (displays entries with size, date and time)
 - `cd <path>`
 - `pwd`
 - `cat <path>`
-- `read <img_path> <host_path>`
-- `write <host_path> <img_path>`
+- `read <img_path> <host_path>` (preserves timestamps and read-only status)
+- `write <host_path> <img_path>` (preserves timestamps, read-only status, and hidden status for dot-files)
 - `touch <path>`
 - `mkdir <path>`
 - `rm <path>`
 - `rmdir <path>`
-- `stat <path>`
+- `stat <path>` (displays detailed metadata including attribute bits)
 - `help`
 - `exit`
 
@@ -121,6 +122,9 @@ Example session:
 
 ```text
 fat12:/> ls
+README.TXT                   62 2026-03-09 00:02:12
+HELLO.TXT                    14 2026-03-09 00:02:12
+TESTDIR        <DIR>          0 2026-03-09 00:02:12
 fat12:/> cat /README.TXT
 fat12:/> write ./local.txt /LOCAL.TXT
 fat12:/> mkdir /DOCS
