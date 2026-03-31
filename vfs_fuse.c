@@ -402,13 +402,21 @@ static int fat12fs_truncate(FAT12_TRUNCATE_SIG)
 
 static int fat12fs_utimens(FAT12_UTIMENS_SIG)
 {
-    (void)tv;
 #if defined(__linux__)
     (void)fi;
 #endif
     Fat12Ctx *ctx = ctx_from_fuse();
     pthread_mutex_lock(&ctx->lock);
-    int rc = fat12_utimens_now(&ctx->fs, path);
+    int rc = fat12_utimens(&ctx->fs, path, tv[1].tv_sec);
+    pthread_mutex_unlock(&ctx->lock);
+    return rc;
+}
+
+static int fat12fs_chmod(const char *path, mode_t mode)
+{
+    Fat12Ctx *ctx = ctx_from_fuse();
+    pthread_mutex_lock(&ctx->lock);
+    int rc = fat12_chmod(&ctx->fs, path, mode);
     pthread_mutex_unlock(&ctx->lock);
     return rc;
 }
@@ -470,6 +478,7 @@ static const struct fuse_operations fat12_ops = {
         .rmdir = fat12fs_rmdir,
         .truncate = fat12fs_truncate,
         .utimens = fat12fs_utimens,
+        .chmod = fat12fs_chmod,
         .rename = fat12fs_rename,
 };
 

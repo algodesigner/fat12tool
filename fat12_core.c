@@ -1045,7 +1045,14 @@ int fat12_stat(Fat12 *fs, const char *path, Fat12Node *out)
 
     memset(out, 0, sizeof(*out));
     out->is_dir = (r.entry.attr & ATTR_DIRECTORY) != 0;
-    out->mode = out->is_dir ? (S_IFDIR | 0755) : (S_IFREG | 0644);
+    if (out->is_dir) {
+        out->mode = S_IFDIR | 0755;
+    } else {
+        out->mode = S_IFREG | 0644;
+    }
+    if (r.entry.attr & ATTR_READ_ONLY) {
+        out->mode &= ~(S_IWUSR | S_IWGRP | S_IWOTH);
+    }
     out->size = r.entry.file_size;
     out->first_cluster = r.entry.first_cluster_lo;
     out->wrt_time = r.entry.wrt_time;
@@ -1098,7 +1105,14 @@ int fat12_list(Fat12 *fs, const char *path, fat12_list_cb cb, void *user)
             Fat12Node node;
             memset(&node, 0, sizeof(node));
             node.is_dir = (e.attr & ATTR_DIRECTORY) != 0;
-            node.mode = node.is_dir ? (S_IFDIR | 0755) : (S_IFREG | 0644);
+            if (node.is_dir) {
+                node.mode = S_IFDIR | 0755;
+            } else {
+                node.mode = S_IFREG | 0644;
+            }
+            if (e.attr & ATTR_READ_ONLY) {
+                node.mode &= ~(S_IWUSR | S_IWGRP | S_IWOTH);
+            }
             node.size = e.file_size;
             node.first_cluster = e.first_cluster_lo;
             node.wrt_time = e.wrt_time;
@@ -1129,7 +1143,14 @@ int fat12_list(Fat12 *fs, const char *path, fat12_list_cb cb, void *user)
             Fat12Node node;
             memset(&node, 0, sizeof(node));
             node.is_dir = (e.attr & ATTR_DIRECTORY) != 0;
-            node.mode = node.is_dir ? (S_IFDIR | 0755) : (S_IFREG | 0644);
+            if (node.is_dir) {
+                node.mode = S_IFDIR | 0755;
+            } else {
+                node.mode = S_IFREG | 0644;
+            }
+            if (e.attr & ATTR_READ_ONLY) {
+                node.mode &= ~(S_IWUSR | S_IWGRP | S_IWOTH);
+            }
             node.size = e.file_size;
             node.first_cluster = e.first_cluster_lo;
             node.wrt_time = e.wrt_time;
@@ -1280,6 +1301,7 @@ ssize_t fat12_write(
 
     fat_time_date(&r.entry.wrt_time, &r.entry.wrt_date);
     r.entry.acc_date = r.entry.wrt_date;
+    r.entry.attr |= ATTR_ARCHIVE;
     if (write_dir_entry_at(fs, r.offset, &r.entry) != 0)
         return -EIO;
 
@@ -1305,7 +1327,11 @@ int fat12_create(Fat12 *fs, const char *path)
         return -EINVAL;
     if (r.found)
         return -EEXIST;
-    if (add_entry(fs, parent, leaf, 0x20, 0, 0, NULL) != 0)
+    uint8_t attr = ATTR_ARCHIVE;
+    if (leaf[0] == '.') {
+        attr |= ATTR_HIDDEN;
+    }
+    if (add_entry(fs, parent, leaf, attr, 0, 0, NULL) != 0)
         return -ENOSPC;
     return 0;
 }
@@ -1381,8 +1407,14 @@ int fat12_mkdir(Fat12 *fs, const char *path)
     uint16_t c;
     if (alloc_cluster(fs, &c) != 0)
         return -ENOSPC;
+
+    uint8_t attr = ATTR_DIRECTORY;
+    if (leaf[0] == '.') {
+        attr |= ATTR_HIDDEN;
+    }
+
     if (mkdir_init(fs, c, parent) != 0 ||
-            add_entry(fs, parent, leaf, ATTR_DIRECTORY, c, 0, NULL) != 0) {
+            add_entry(fs, parent, leaf, attr, c, 0, NULL) != 0) {
         free_chain(fs, c);
         return -ENOSPC;
     }
@@ -1503,6 +1535,7 @@ int fat12_truncate(Fat12 *fs, const char *path, off_t size)
     r.entry.file_size = new_size;
     fat_time_date(&r.entry.wrt_time, &r.entry.wrt_date);
     r.entry.acc_date = r.entry.wrt_date;
+    r.entry.attr |= ATTR_ARCHIVE;
     if (write_dir_entry_at(fs, r.offset, &r.entry) != 0)
         return -EIO;
     fflush(fs->fp);
@@ -1554,6 +1587,29 @@ int fat12_set_attr(Fat12 *fs, const char *path, uint8_t attr)
         return -ENOENT;
 
     r.entry.attr = attr;
+    if (write_dir_entry_at(fs, r.offset, &r.entry) != 0)
+        return -EIO;
+    return 0;
+}
+
+/*
+ * @brief Updates directory entry attributes from POSIX mode.
+ */
+int fat12_chmod(Fat12 *fs, const char *path, mode_t mode)
+{
+    if (!path || path[0] != '/')
+        return -EINVAL;
+
+    EntryRef r;
+    if (resolve_abs_path(fs, path, &r, NULL, NULL, 0) != 0 || !r.found)
+        return -ENOENT;
+
+    if (!(mode & S_IWUSR)) {
+        r.entry.attr |= ATTR_READ_ONLY;
+    } else {
+        r.entry.attr &= ~ATTR_READ_ONLY;
+    }
+
     if (write_dir_entry_at(fs, r.offset, &r.entry) != 0)
         return -EIO;
     return 0;

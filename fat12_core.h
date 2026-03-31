@@ -277,6 +277,16 @@ int fat12_utimens(Fat12 *fs, const char *path, time_t mtime);
 int fat12_set_attr(Fat12 *fs, const char *path, uint8_t attr);
 
 /**
+ * @brief Updates directory entry attributes from POSIX mode.
+ *
+ * @param fs   Open filesystem handle.
+ * @param path Absolute file or directory path.
+ * @param mode POSIX mode.
+ * @return 0 on success, negative errno-style code on failure.
+ */
+int fat12_chmod(Fat12 *fs, const char *path, mode_t mode);
+
+/**
  * @brief Converts FAT date/time fields to a standard `time_t`.
  *
  * @param fat_time FAT encoded time.
