@@ -115,6 +115,7 @@ Commands:
 - `rm <path>`
 - `rmdir <path>`
 - `stat <path>` (displays detailed metadata including attribute bits)
+- `verify [--full] [--fix] [--verbose] [--yes]` (check and repair filesystem integrity)
 - `help`
 - `exit`
 
@@ -130,7 +131,78 @@ fat12:/> write ./local.txt /LOCAL.TXT
 fat12:/> mkdir /DOCS
 fat12:/> read /LOCAL.TXT ./copy.txt
 fat12:/> exit
+ ```
+
+## Filesystem Integrity Verification
+
+The `verify` command performs comprehensive checks on FAT12 images and can repair common filesystem issues.
+
+### Basic Usage
+
+```sh
+fat12:/> verify                    # Run basic integrity checks
+fat12:/> verify --verbose          # Show detailed error information
+fat12:/> verify --fix              # Attempt to fix detected issues
+fat12:/> verify --fix --yes        # Auto-confirm fixes (no prompts)
+fat12:/> verify --full --verbose   # Comprehensive check with details
 ```
+
+### Checks Performed
+
+1. **FAT Consistency**: Verifies all FAT copies are identical
+2. **Cross-linked Clusters**: Detects cycles in cluster allocation chains
+3. **Orphaned Clusters**: Finds allocated clusters not referenced by any directory
+4. **Cluster Allocation Analysis**: Counts free, allocated, and bad clusters
+5. **Root Directory Validation**: Checks root directory entry limits
+
+### Repair Capabilities
+
+- **FAT Inconsistencies**: Synchronizes all FAT copies
+- **Cross-linked Clusters**: Breaks cycles by marking shorter/unreferenced chains as bad
+- **Orphaned Clusters**: Frees unreferenced clusters for reuse
+- **Automatic Backup**: Creates timestamped backup before any repair
+
+### Example Output
+
+```text
+fat12:/> verify --verbose
+Verifying FAT12 image integrity...
+Verification Results:
+  FAT consistency: ✓ OK
+  Cross-linked clusters: ✗ 2 found
+  Orphaned clusters: ✓ None
+  Root directory: 15/224 entries (6.7%)
+  Free space: 124/2846 clusters (4.4%)
+  Total issues: 2
+
+fat12:/> verify --fix
+Verifying FAT12 image integrity...
+✗ Found 2 cross-linked clusters
+
+Proposed fixes:
+• Fix 2 cross-linked clusters (mark shorter chains as bad)
+• Create backup: sample.img.verify-backup-20260401-143022
+
+Apply these fixes? [y/N]: y
+Creating backup... ✓
+Applying fixes...
+✓ Fixed 2 cross-links
+✓ All fixes applied successfully
+```
+
+### Options
+
+- `--full` : Perform comprehensive checks (currently always enabled)
+- `--fix` : Attempt to repair detected issues
+- `--verbose` : Show detailed progress and error information
+- `--yes` : Auto-confirm fixes (use with `--fix`)
+
+### Safety Features
+
+1. **Backup Creation**: Automatic timestamped backup before any repair
+2. **User Confirmation**: Requires explicit confirmation before applying fixes (unless `--yes` used)
+3. **Conservative Repair**: Marks problematic clusters as bad (0xFF7) rather than freeing, allowing data recovery
+4. **Memory Warnings**: Alerts if verification may use significant memory (>50MB)
 
 ## Using `fat12mount`
 

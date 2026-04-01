@@ -2337,9 +2337,8 @@ static int sync_fat_copies(Fat12 *fs)
 /**
  * @brief Frees orphaned clusters (sets FAT entries to 0).
  */
-/*
-static int free_orphaned_clusters(Fat12 *fs, const uint16_t *clusters, int
-count)
+static int free_orphaned_clusters(
+        Fat12 *fs, const uint16_t *clusters, int count)
 {
     if (!fs || !clusters || count <= 0)
         return 0;
@@ -2362,7 +2361,165 @@ count)
 
     return freed;
 }
-*/
+
+/**
+ * @brief Determines which chain to preserve in a cross-link.
+ * @return 1 to preserve chain1, 0 to preserve chain2.
+ */
+static int should_preserve_chain(const uint16_t *chain1, size_t len1,
+        const uint16_t *chain2, size_t len2, const uint8_t *referenced_bitmap)
+{
+    if (!chain1 || len1 == 0)
+        return 0;
+    if (!chain2 || len2 == 0)
+        return 1;
+
+    // Check if chains are referenced by directories
+    int chain1_referenced = 0;
+    int chain2_referenced = 0;
+
+    for (size_t i = 0; i < len1; i++) {
+        if (referenced_bitmap[chain1[i]]) {
+            chain1_referenced = 1;
+            break;
+        }
+    }
+
+    for (size_t i = 0; i < len2; i++) {
+        if (referenced_bitmap[chain2[i]]) {
+            chain2_referenced = 1;
+            break;
+        }
+    }
+
+    // Prefer referenced chains
+    if (chain1_referenced && !chain2_referenced)
+        return 1;
+    if (!chain1_referenced && chain2_referenced)
+        return 0;
+
+    // If both or neither referenced, prefer longer chain
+    if (len1 > len2)
+        return 1;
+    if (len2 > len1)
+        return 0;
+
+    // If equal length, prefer chain starting from lower cluster
+    return (chain1[0] < chain2[0]) ? 1 : 0;
+}
+
+/**
+ * @brief Breaks a cross-link by marking one chain as bad.
+ */
+static int break_cross_link(Fat12 *fs, uint16_t break_chain_start,
+        const uint16_t *break_chain, size_t break_len,
+        const uint16_t *preserve_chain, size_t preserve_len)
+{
+    if (!fs || !break_chain || break_len == 0 || !preserve_chain ||
+            preserve_len == 0)
+        return -EINVAL;
+
+    // Find the intersection point (cluster where chains meet)
+    uint16_t intersection = 0;
+    for (size_t i = 0; i < break_len; i++) {
+        for (size_t j = 0; j < preserve_len; j++) {
+            if (break_chain[i] == preserve_chain[j]) {
+                intersection = break_chain[i];
+                break;
+            }
+        }
+        if (intersection != 0)
+            break;
+    }
+
+    if (intersection == 0) {
+        // No intersection found (shouldn't happen for cross-links)
+        // Mark entire break chain as bad
+        intersection = break_chain_start;
+    }
+
+    // Mark from intersection to end of break chain as bad
+    int marking = 0;
+    uint16_t current = intersection;
+    while (1) {
+        uint16_t next = fat_get(fs, current);
+        fat_set(fs, current, 0xFF7);  // Mark as bad
+
+        marking++;
+
+        // Stop if we reach end of chain or loop back
+        if (next >= 0xFF8 || next == 0 || next == current)
+            break;
+
+        current = next;
+    }
+
+    return marking;
+}
+
+/**
+ * @brief Fixes cross-linked clusters using "preserve referenced chain"
+ * strategy.
+ */
+static int fix_cross_links(Fat12 *fs, const Fat12CrossLink *links, int count,
+        const uint8_t *referenced_bitmap)
+{
+    if (!fs || !links || count <= 0 || !referenced_bitmap)
+        return 0;
+
+    int fixed = 0;
+
+    for (int i = 0; i < count; i++) {
+        uint16_t c1 = links[i].cluster1;
+        uint16_t c2 = links[i].cluster2;
+
+        // Get chain information
+        uint16_t *chain1 = NULL, *chain2 = NULL;
+        size_t len1 = 0, len2 = 0;
+
+        if (collect_chain(fs, c1, &chain1, &len1) != 0) {
+            free(chain1);
+            free(chain2);
+            return -EIO;
+        }
+
+        if (collect_chain(fs, c2, &chain2, &len2) != 0) {
+            free(chain1);
+            free(chain2);
+            return -EIO;
+        }
+
+        // Determine which chain to preserve
+        int preserve_chain1 = should_preserve_chain(
+                chain1, len1, chain2, len2, referenced_bitmap);
+
+        // Break the cross-link
+        if (preserve_chain1) {
+            if (break_cross_link(fs, c2, chain2, len2, chain1, len1) > 0) {
+                fixed++;
+            }
+        } else {
+            if (break_cross_link(fs, c1, chain1, len1, chain2, len2) > 0) {
+                fixed++;
+            }
+        }
+
+        free(chain1);
+        free(chain2);
+    }
+
+    // Write updated FAT to disk
+    if (fixed > 0) {
+        if (sync_fat_copies(fs) != 0)
+            return -EIO;
+    }
+
+    return fixed;
+}
+
+/**
+ * @brief Applies fixes based on verification report.
+ */
 
 /**
  * @brief Applies fixes based on verification report.
@@ -2387,9 +2544,47 @@ int fat12_fix_integrity(Fat12 *fs, const Fat12IntegrityReport *report,
             (*fixes_applied)++;
     }
 
-    // Note: Cross-link fixing requires more complex logic
-    // Orphaned cluster fixing would be implemented here when we have
-    // the list of orphaned clusters
+    // Fix orphaned clusters (re-detect since report only has count)
+    if (report->orphaned_count > 0) {
+        uint16_t *orphaned_clusters = NULL;
+        int orphaned_count = 0;
+
+        if (detect_orphaned_clusters(fs, &orphaned_clusters, &orphaned_count) ==
+                0) {
+            int freed = free_orphaned_clusters(
+                    fs, orphaned_clusters, orphaned_count);
+            if (freed > 0) {
+                (*fixes_applied)++;
+            }
+            free(orphaned_clusters);
+        }
+    }
+
+    // Fix cross-links (re-detect since report only has count)
+    if (report->cross_linked_count > 0) {
+        // Need referenced bitmap for cross-link resolution
+        int max_clusters = fs->total_clusters + 2;
+        uint8_t *referenced_bitmap = calloc(max_clusters, 1);
+
+        if (referenced_bitmap) {
+            // Build reference bitmap
+            if (traverse_directory(fs, 0, referenced_bitmap, NULL) == 0) {
+                Fat12CrossLink *cross_links = NULL;
+                int cross_link_count = 0;
+
+                if (detect_cross_links(fs, &cross_links, &cross_link_count) ==
+                        0) {
+                    int fixed = fix_cross_links(fs, cross_links,
+                            cross_link_count, referenced_bitmap);
+                    if (fixed > 0) {
+                        (*fixes_applied)++;
+                    }
+                    free(cross_links);
+                }
+            }
+            free(referenced_bitmap);
+        }
+    }
 
     return 0;
 }

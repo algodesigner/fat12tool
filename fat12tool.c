@@ -29,7 +29,8 @@
  * @brief Manages the state of an interactive shell session.
  */
 typedef struct {
-    char cwd_path[MAX_PATH_LEN]; /**< Current working directory path. */
+    char cwd_path[MAX_PATH_LEN];   /**< Current working directory path. */
+    char image_path[MAX_PATH_LEN]; /**< Path to the FAT12 image file. */
 } Session;
 
 /**
@@ -197,9 +198,8 @@ static int write_host_file(const char *path, const uint8_t *buf, uint32_t len)
 /**
  * @brief Creates timestamped backup filename.
  */
-/*
-static void create_backup_filename(const char *original, char *backup,
-                                   size_t backup_size)
+static void create_backup_filename(
+        const char *original, char *backup, size_t backup_size)
 {
     if (!original || !backup || backup_size == 0)
         return;
@@ -208,11 +208,10 @@ static void create_backup_filename(const char *original, char *backup,
     struct tm *tm_info = localtime(&now);
 
     snprintf(backup, backup_size, "%s.verify-backup-%04d%02d%02d-%02d%02d%02d",
-             original,
-             tm_info->tm_year + 1900, tm_info->tm_mon + 1, tm_info->tm_mday,
-             tm_info->tm_hour, tm_info->tm_min, tm_info->tm_sec);
+            original, tm_info->tm_year + 1900, tm_info->tm_mon + 1,
+            tm_info->tm_mday, tm_info->tm_hour, tm_info->tm_min,
+            tm_info->tm_sec);
 }
-*/
 
 /**
  * @brief Prompts user for confirmation.
@@ -288,8 +287,8 @@ static void print_verification_report(
 /**
  * @brief Main verify command implementation.
  */
-static void verify_command(Fat12 *fs, int full_check, int fix_issues,
-        int verbose, int auto_confirm)
+static void verify_command(Fat12 *fs, const char *image_path, int full_check,
+        int fix_issues, int verbose, int auto_confirm)
 {
     (void)full_check;  // Currently full_check is always enabled
 
@@ -325,6 +324,15 @@ static void verify_command(Fat12 *fs, int full_check, int fix_issues,
         }
 
         if (proposed_fixes > 0) {
+            char backup_path[MAX_PATH_LEN * 2];
+            backup_path[0] = '\0';
+
+            if (image_path && image_path[0] != '\0') {
+                create_backup_filename(
+                        image_path, backup_path, sizeof(backup_path));
+                printf("Backup will be created: %s\n", backup_path);
+            }
+
             if (!auto_confirm) {
                 if (!ask_confirmation("Apply these fixes?")) {
                     printf("Fixes cancelled by user\n");
@@ -335,10 +343,10 @@ static void verify_command(Fat12 *fs, int full_check, int fix_issues,
                 printf("Auto-confirming fixes (--yes flag used)\n");
             }
 
-            // Apply fixes (without backup for now - will be implemented in
-            // Phase 3)
+            // Apply fixes with backup
             int fixes_applied = 0;
-            if (fat12_fix_integrity(fs, &report, NULL, &fixes_applied) == 0) {
+            if (fat12_fix_integrity(fs, &report, backup_path, &fixes_applied) ==
+                    0) {
                 printf("✓ Applied %d fix%s\n", fixes_applied,
                         fixes_applied == 1 ? "" : "es");
             } else {
@@ -404,6 +412,8 @@ int main(int argc, char **argv)
 
     Session sess;
     strcpy(sess.cwd_path, "/");
+    strncpy(sess.image_path, image, sizeof(sess.image_path) - 1);
+    sess.image_path[sizeof(sess.image_path) - 1] = '\0';
 
     printf("FAT12 shell opened: %s\n", argv[1]);
     print_help();
@@ -522,7 +532,8 @@ int main(int argc, char **argv)
                     auto_confirm = 1;
             }
 
-            verify_command(&fs, full_check, fix_issues, verbose, auto_confirm);
+            verify_command(&fs, sess.image_path, full_check, fix_issues,
+                    verbose, auto_confirm);
             continue;
         }
         if (strcmp(args[0], "cat") == 0) {

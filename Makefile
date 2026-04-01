@@ -82,7 +82,7 @@ uninstall:
 	rm -f $(BINDIR)/fat12mount
 	rm -f $(BINDIR)/fat12mount.exe
 
-test: fat12tool$(EXE) test-core test-unit test-cli test-mount-robust
+test: fat12tool$(EXE) test-core test-unit test-cli test-verify test-mount-robust
 
 fat12_stress: tests/fat12_stress.c
 	$(CC) $(CFLAGS) -o tests/fat12_stress tests/fat12_stress.c
@@ -142,6 +142,9 @@ tests/fat12_core_unit_test: tests/test_fat12_core_unit.c fat12_core.h tests/util
 
 test-cli: fat12tool$(EXE)
 	./tests/test_cli.sh
+
+test-verify: fat12tool$(EXE)
+	./tests/test_verify_simple.sh
 
 test-mount-robust: tests/fat12_verify tests/fat12_stress
 ifneq ($(HAVE_FUSE)$(HAVE_WINFSP),00)

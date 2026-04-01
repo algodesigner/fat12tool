@@ -51,6 +51,9 @@ echo "from-host-write" > "$HOST_SRC"
   echo "rm /NEWDIR/MOVETST.TXT"
   echo "rmdir /NEWDIR"
   echo "stat /HELLO.TXT"
+  echo "verify"
+  echo "verify --verbose"
+  echo "verify --full"
   echo "exit"
 } | "$ROOT_DIR/fat12tool" "$TMP_IMG" > "$LOG" 2>&1
 
@@ -62,5 +65,13 @@ grep -q "NEST.TXT" "$LOG"
 grep -q "MOVETST.TXT" "$LOG"
 
 grep -q "from-host-write" "$HOST_OUT"
+
+# Verify command output checks
+grep -q "Verifying FAT12 image integrity" "$LOG"
+grep -q "Verification Results:" "$LOG"
+grep -q "FAT consistency: ✓ OK" "$LOG"
+grep -q "Cross-linked clusters: ✓ None" "$LOG"
+grep -q "Orphaned clusters: ✓ None" "$LOG"
+grep -q "Total issues: 0" "$LOG"
 
 echo "PASS: fat12tool CLI test"
