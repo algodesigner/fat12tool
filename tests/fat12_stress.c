@@ -27,8 +27,12 @@
 #ifndef O_BINARY
 #define O_BINARY 0
 #endif
+#ifndef S_IRUSR
 #define S_IRUSR _S_IREAD
+#endif
+#ifndef S_IWUSR
 #define S_IWUSR _S_IWRITE
+#endif
 #else
 #define O_BINARY 0
 #endif
