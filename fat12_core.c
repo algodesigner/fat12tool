@@ -30,6 +30,7 @@
 
 #include <ctype.h>
 #include <errno.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -44,38 +45,38 @@
  * @brief Represents the raw FAT12 boot sector layout.
  */
 typedef struct {
-    uint8_t jmp[3]; /**< Jump instruction. */
-    uint8_t oem[8]; /**< OEM string. */
-    uint16_t bytes_per_sector; /**< Bytes per logical sector. */
+    uint8_t jmp[3];              /**< Jump instruction. */
+    uint8_t oem[8];              /**< OEM string. */
+    uint16_t bytes_per_sector;   /**< Bytes per logical sector. */
     uint8_t sectors_per_cluster; /**< Sectors per cluster. */
-    uint16_t reserved_sectors; /**< Number of reserved sectors. */
-    uint8_t fat_count; /**< Number of FATs. */
-    uint16_t root_entry_count; /**< Root directory entry count. */
-    uint16_t total_sectors_16; /**< Total sectors (16-bit). */
-    uint8_t media; /**< Media descriptor. */
-    uint16_t sectors_per_fat; /**< Sectors per FAT. */
-    uint16_t sectors_per_track; /**< Sectors per track. */
-    uint16_t heads; /**< Number of heads. */
-    uint32_t hidden_sectors; /**< Hidden sectors. */
-    uint32_t total_sectors_32; /**< Total sectors (32-bit). */
+    uint16_t reserved_sectors;   /**< Number of reserved sectors. */
+    uint8_t fat_count;           /**< Number of FATs. */
+    uint16_t root_entry_count;   /**< Root directory entry count. */
+    uint16_t total_sectors_16;   /**< Total sectors (16-bit). */
+    uint8_t media;               /**< Media descriptor. */
+    uint16_t sectors_per_fat;    /**< Sectors per FAT. */
+    uint16_t sectors_per_track;  /**< Sectors per track. */
+    uint16_t heads;              /**< Number of heads. */
+    uint32_t hidden_sectors;     /**< Hidden sectors. */
+    uint32_t total_sectors_32;   /**< Total sectors (32-bit). */
 } BootSector;
 
 /**
  * @brief Represents a raw FAT directory entry.
  */
 typedef struct {
-    uint8_t name[11]; /**< Short name (8.3). */
-    uint8_t attr; /**< Attributes. */
-    uint8_t ntres; /**< Reserved. */
-    uint8_t crt_time_tenth; /**< Creation time (tenths). */
-    uint16_t crt_time; /**< Creation time. */
-    uint16_t crt_date; /**< Creation date. */
-    uint16_t acc_date; /**< Last access date. */
+    uint8_t name[11];          /**< Short name (8.3). */
+    uint8_t attr;              /**< Attributes. */
+    uint8_t ntres;             /**< Reserved. */
+    uint8_t crt_time_tenth;    /**< Creation time (tenths). */
+    uint16_t crt_time;         /**< Creation time. */
+    uint16_t crt_date;         /**< Creation date. */
+    uint16_t acc_date;         /**< Last access date. */
     uint16_t first_cluster_hi; /**< High word of first cluster. */
-    uint16_t wrt_time; /**< Last write time. */
-    uint16_t wrt_date; /**< Last write date. */
+    uint16_t wrt_time;         /**< Last write time. */
+    uint16_t wrt_date;         /**< Last write date. */
     uint16_t first_cluster_lo; /**< Low word of first cluster. */
-    uint32_t file_size; /**< File size in bytes. */
+    uint32_t file_size;        /**< File size in bytes. */
 } DirEntry;
 #pragma pack(pop)
 
@@ -83,9 +84,9 @@ typedef struct {
  * @brief Holds a reference to a directory entry and its location.
  */
 typedef struct {
-    DirEntry entry; /**< Entry payload. */
+    DirEntry entry;  /**< Entry payload. */
     uint64_t offset; /**< Absolute byte offset. */
-    int found; /**< Non-zero if entry exists. */
+    int found;       /**< Non-zero if entry exists. */
 } EntryRef;
 
 #pragma pack(push, 1)
@@ -93,15 +94,15 @@ typedef struct {
  * @brief Represents an MBR partition table entry.
  */
 typedef struct {
-    uint8_t status; /**< Partition status. */
-    uint8_t chs_first[3]; /**< CHS start. */
-    uint8_t type; /**< Partition type. */
-    uint8_t chs_last[3]; /**< CHS end. */
-    uint32_t lba_start; /**< LBA start. */
+    uint8_t status;        /**< Partition status. */
+    uint8_t chs_first[3];  /**< CHS start. */
+    uint8_t type;          /**< Partition type. */
+    uint8_t chs_last[3];   /**< CHS end. */
+    uint32_t lba_start;    /**< LBA start. */
     uint32_t sector_count; /**< Sector count. */
 } MbrPartition;
 #pragma pack(pop)
- 
+
 /* Internal forward declarations */
 static int read_at(FILE *fp, uint64_t off, void *buf, size_t len);
 static int write_at(FILE *fp, uint64_t off, const void *buf, size_t len);
@@ -407,8 +408,10 @@ time_t fat12_fat_to_time_t(uint16_t fat_time, uint16_t fat_date)
     int min = (fat_time >> 5) & 0x3F;
     int sec = (fat_time & 0x1F) * 2;
 
-    if (mon < 1) mon = 1;
-    if (day < 1) day = 1;
+    if (mon < 1)
+        mon = 1;
+    if (day < 1)
+        day = 1;
 
     tmv.tm_year = year - 1900;
     tmv.tm_mon = mon - 1;
@@ -989,9 +992,9 @@ int fat12_open(
 
     fs->total_clusters = (fs->total_sectors -
                                  (fs->bpb.reserved_sectors +
-                                          (uint32_t)fs->bpb.fat_count *
-                                                  fs->bpb.sectors_per_fat +
-                                          fs->root_dir_sectors)) /
+                                         (uint32_t)fs->bpb.fat_count *
+                                                 fs->bpb.sectors_per_fat +
+                                         fs->root_dir_sectors)) /
             fs->bpb.sectors_per_cluster;
     if (fs->total_clusters < 1 || fs->total_clusters >= 4085) {
         fat12_close(fs);
@@ -1695,6 +1698,698 @@ int fat12_rename(Fat12 *fs, const char *from, const char *to)
     // Mark old entry as deleted
     if (remove_entry(fs, src_ref.offset) != 0)
         return -EIO;
+
+    return 0;
+}
+
+/* ============================================================================
+ * Integrity Verification Functions
+ * ===========================================================================*/
+
+/**
+ * @brief Counts different types of clusters in FAT.
+ */
+static int count_cluster_types(
+        Fat12 *fs, int *free_count, int *allocated_count, int *bad_count)
+{
+    if (!fs || !free_count || !allocated_count || !bad_count)
+        return -EINVAL;
+
+    *free_count = 0;
+    *allocated_count = 0;
+    *bad_count = 0;
+
+    for (uint16_t cluster = 2; cluster < fs->total_clusters + 2; cluster++) {
+        uint16_t value = fat_get(fs, cluster);
+        if (value == 0) {
+            (*free_count)++;
+        } else if (value == 0xFF7) {
+            (*bad_count)++;
+        } else if (value < 0xFF8) {
+            (*allocated_count)++;
+        }
+        // Values 0xFF8-0xFFF are EOC markers, counted as allocated
+    }
+
+    return 0;
+}
+
+/**
+ * @brief Counts used entries in root directory.
+ */
+static int count_root_entries(Fat12 *fs, int *used, int *max)
+{
+    if (!fs || !used || !max)
+        return -EINVAL;
+
+    *max = fs->bpb.root_entry_count;
+    *used = 0;
+
+    for (uint32_t i = 0; i < fs->bpb.root_entry_count; ++i) {
+        DirEntry e;
+        if (read_dir_entry_at(fs,
+                    fs->root_offset + (uint64_t)i * sizeof(DirEntry), &e) != 0)
+            return -EIO;
+
+        if (e.name[0] == 0x00)
+            break;  // End of directory
+
+        if (e.name[0] != 0xE5 && e.attr != ATTR_LFN &&
+                !(e.attr & ATTR_VOLUME_ID)) {
+            (*used)++;
+        }
+    }
+
+    return 0;
+}
+
+/**
+ * @brief Checks if FAT replicas are consistent.
+ */
+static int check_fat_consistency(Fat12 *fs)
+{
+    if (!fs || fs->bpb.fat_count < 1)
+        return -EINVAL;
+
+    // Read first FAT
+    uint8_t *fat1 = fs->fat;  // Already loaded in memory
+
+    // Check other FATs against first one
+    for (int i = 1; i < fs->bpb.fat_count; i++) {
+        uint8_t *fati = malloc(fs->fat_size_bytes);
+        if (!fati)
+            return -ENOMEM;
+
+        uint64_t offset = fs->fat_offset + (uint64_t)i * fs->fat_size_bytes;
+        if (fseeko(fs->fp, (off_t)(fs->base_offset + offset), SEEK_SET) != 0) {
+            free(fati);
+            return -EIO;
+        }
+
+        if (fread(fati, 1, fs->fat_size_bytes, fs->fp) != fs->fat_size_bytes) {
+            free(fati);
+            return -EIO;
+        }
+
+        if (memcmp(fat1, fati, fs->fat_size_bytes) != 0) {
+            free(fati);
+            return -1;  // FAT copies differ
+        }
+
+        free(fati);
+    }
+
+    return 0;  // All FATs consistent
+}
+
+/**
+ * @brief Marks a cluster chain in the reference bitmap.
+ */
+static void mark_cluster_chain(
+        Fat12 *fs, uint16_t start_cluster, uint8_t *ref_bitmap)
+{
+    uint16_t current = start_cluster;
+
+    while (current >= 2 && current < 0xFF7) {
+        if (ref_bitmap[current]) {
+            // Already marked, possible cross-link (will be detected separately)
+            break;
+        }
+        ref_bitmap[current] = 1;
+
+        uint16_t next = fat_get(fs, current);
+        if (next >= 0xFF8)  // EOC
+            break;
+
+        current = next;
+    }
+}
+
+/**
+ * @brief Traverses directory and marks referenced clusters.
+ */
+static int traverse_directory(
+        Fat12 *fs, uint16_t dir_cluster, uint8_t *ref_bitmap, int *entry_count)
+{
+    int local_count = 0;
+
+    if (dir_cluster == 0) {
+        // Root directory
+        for (uint32_t i = 0; i < fs->bpb.root_entry_count; ++i) {
+            DirEntry e;
+            if (read_dir_entry_at(fs,
+                        fs->root_offset + (uint64_t)i * sizeof(DirEntry),
+                        &e) != 0)
+                return -EIO;
+
+            if (e.name[0] == 0x00)
+                break;
+
+            if (e.name[0] == 0xE5 || e.attr == ATTR_LFN ||
+                    (e.attr & ATTR_VOLUME_ID))
+                continue;
+
+            local_count++;
+
+            uint16_t first_cluster = e.first_cluster_lo;
+            if (first_cluster != 0) {
+                mark_cluster_chain(fs, first_cluster, ref_bitmap);
+
+                // If it's a directory, traverse it recursively
+                if (e.attr & ATTR_DIRECTORY) {
+                    if (traverse_directory(
+                                fs, first_cluster, ref_bitmap, NULL) != 0) {
+                        return -EIO;
+                    }
+                }
+            }
+        }
+    } else {
+        // Subdirectory
+        uint16_t c = dir_cluster;
+        while (c >= 2 && c < 0xFF7) {
+            uint64_t base = cluster_to_offset(fs, c);
+            uint32_t cnt = fs->cluster_size / sizeof(DirEntry);
+
+            for (uint32_t i = 0; i < cnt; ++i) {
+                DirEntry e;
+                if (read_dir_entry_at(
+                            fs, base + (uint64_t)i * sizeof(DirEntry), &e) != 0)
+                    return -EIO;
+
+                if (e.name[0] == 0x00)
+                    return 0;
+
+                if (e.name[0] == 0xE5 || e.attr == ATTR_LFN ||
+                        (e.attr & ATTR_VOLUME_ID))
+                    continue;
+
+                // Skip . and .. entries
+                if (e.name[0] == '.' && (e.name[1] == ' ' || e.name[1] == '.'))
+                    continue;
+
+                local_count++;
+
+                uint16_t first_cluster = e.first_cluster_lo;
+                if (first_cluster != 0) {
+                    mark_cluster_chain(fs, first_cluster, ref_bitmap);
+
+                    // If it's a directory, traverse it recursively
+                    if (e.attr & ATTR_DIRECTORY) {
+                        if (traverse_directory(
+                                    fs, first_cluster, ref_bitmap, NULL) != 0) {
+                            return -EIO;
+                        }
+                    }
+                }
+            }
+
+            uint16_t nx = fat_get(fs, c);
+            if (nx >= 0xFF8)  // EOC
+                break;
+            c = nx;
+        }
+    }
+
+    if (entry_count)
+        *entry_count = local_count;
+
+    return 0;
+}
+
+/**
+ * @brief Detects cross-linked clusters.
+ */
+static int detect_cross_links(Fat12 *fs, Fat12CrossLink **links, int *count)
+{
+    if (!fs || !links || !count)
+        return -EINVAL;
+
+    *links = NULL;
+    *count = 0;
+
+    int max_clusters = fs->total_clusters + 2;
+    uint8_t *visited = calloc(max_clusters, 1);
+    uint8_t *in_current_chain = calloc(max_clusters, 1);
+
+    if (!visited || !in_current_chain) {
+        free(visited);
+        free(in_current_chain);
+        return -ENOMEM;
+    }
+
+    // Simple array for cross-links (we'll allocate as needed)
+    int capacity = 10;
+    Fat12CrossLink *cross_links = malloc(capacity * sizeof(Fat12CrossLink));
+    if (!cross_links) {
+        free(visited);
+        free(in_current_chain);
+        return -ENOMEM;
+    }
+
+    int cross_link_count = 0;
+
+    for (uint16_t cluster = 2; cluster < max_clusters; cluster++) {
+        uint16_t value = fat_get(fs, cluster);
+        if (value == 0 || value >= 0xFF7)  // Free or bad
+            continue;
+
+        if (visited[cluster])
+            continue;
+
+        memset(in_current_chain, 0, max_clusters);
+        uint16_t current = cluster;
+
+        while (current >= 2 && current < 0xFF7) {
+            if (in_current_chain[current]) {
+                // Cross-link detected!
+                if (cross_link_count >= capacity) {
+                    capacity *= 2;
+                    Fat12CrossLink *new_links = realloc(
+                            cross_links, capacity * sizeof(Fat12CrossLink));
+                    if (!new_links) {
+                        free(cross_links);
+                        free(visited);
+                        free(in_current_chain);
+                        return -ENOMEM;
+                    }
+                    cross_links = new_links;
+                }
+
+                cross_links[cross_link_count].cluster1 = cluster;
+                cross_links[cross_link_count].cluster2 = current;
+                cross_link_count++;
+                break;
+            }
+
+            if (visited[current])
+                break;  // Already checked this chain
+
+            in_current_chain[current] = 1;
+            visited[current] = 1;
+            current = fat_get(fs, current);
+        }
+
+        // Mark entire chain as visited
+        current = cluster;
+        while (current >= 2 && current < 0xFF7) {
+            visited[current] = 1;
+            uint16_t next = fat_get(fs, current);
+            if (next >= 0xFF8)
+                break;
+            current = next;
+        }
+    }
+
+    free(visited);
+    free(in_current_chain);
+
+    *links = cross_links;
+    *count = cross_link_count;
+
+    return 0;
+}
+
+/**
+ * @brief Detects orphaned clusters.
+ */
+static int detect_orphaned_clusters(Fat12 *fs, uint16_t **clusters, int *count)
+{
+    if (!fs || !clusters || !count)
+        return -EINVAL;
+
+    *clusters = NULL;
+    *count = 0;
+
+    int max_clusters = fs->total_clusters + 2;
+    uint8_t *referenced = calloc(max_clusters, 1);
+
+    if (!referenced)
+        return -ENOMEM;
+
+    // Traverse directory tree to mark referenced clusters
+    if (traverse_directory(fs, 0, referenced, NULL) != 0) {
+        free(referenced);
+        return -EIO;
+    }
+
+    // Simple array for orphaned clusters
+    int capacity = 10;
+    uint16_t *orphaned = malloc(capacity * sizeof(uint16_t));
+    if (!orphaned) {
+        free(referenced);
+        return -ENOMEM;
+    }
+
+    int orphaned_count = 0;
+
+    // Find allocated but not referenced clusters
+    for (uint16_t cluster = 2; cluster < max_clusters; cluster++) {
+        uint16_t value = fat_get(fs, cluster);
+        if (value != 0 && value < 0xFF7 && !referenced[cluster]) {
+            if (orphaned_count >= capacity) {
+                capacity *= 2;
+                uint16_t *new_orphaned =
+                        realloc(orphaned, capacity * sizeof(uint16_t));
+                if (!new_orphaned) {
+                    free(orphaned);
+                    free(referenced);
+                    return -ENOMEM;
+                }
+                orphaned = new_orphaned;
+            }
+
+            orphaned[orphaned_count++] = cluster;
+        }
+    }
+
+    free(referenced);
+
+    *clusters = orphaned;
+    *count = orphaned_count;
+
+    return 0;
+}
+
+/**
+ * @brief Appends formatted error message to error buffer.
+ */
+static void append_error(char **error_buf, size_t *buf_size, size_t *buf_len,
+        const char *format, ...)
+{
+    if (!error_buf || !buf_size || !buf_len)
+        return;
+
+    va_list args;
+    va_start(args, format);
+
+    // Calculate needed size
+    va_list args_copy;
+    va_copy(args_copy, args);
+    int needed = vsnprintf(NULL, 0, format, args_copy);
+    va_end(args_copy);
+
+    if (needed < 0)
+        return;
+
+    // Ensure buffer is large enough
+    size_t new_len = *buf_len + (size_t)needed + 1;  // +1 for newline
+    if (new_len > *buf_size) {
+        size_t new_size = *buf_size == 0 ? 256 : *buf_size * 2;
+        while (new_size < new_len)
+            new_size *= 2;
+
+        char *new_buf = realloc(*error_buf, new_size);
+        if (!new_buf)
+            return;
+
+        *error_buf = new_buf;
+        *buf_size = new_size;
+    }
+
+    // Append the formatted message
+    int written = vsnprintf(
+            *error_buf + *buf_len, *buf_size - *buf_len, format, args);
+    if (written > 0)
+        *buf_len += (size_t)written;
+
+    // Add newline
+    if (*buf_len < *buf_size - 1) {
+        (*error_buf)[*buf_len] = '\n';
+        (*buf_len)++;
+        (*error_buf)[*buf_len] = '\0';
+    }
+
+    va_end(args);
+}
+
+/**
+ * @brief Estimates memory usage for verification.
+ */
+static size_t estimate_memory_usage(const Fat12 *fs)
+{
+    if (!fs)
+        return 0;
+
+    // Bitmaps: 2 * (total_clusters + 2) bytes
+    // Cross-link array: worst-case total_clusters * sizeof(Fat12CrossLink)
+    // Orphaned cluster array: worst-case total_clusters * sizeof(uint16_t)
+    // Total: ~ (total_clusters * 10) bytes
+
+    size_t bitmap_size = 2 * (fs->total_clusters + 2);
+    size_t array_size =
+            fs->total_clusters * (sizeof(Fat12CrossLink) + sizeof(uint16_t));
+    return bitmap_size + array_size;
+}
+
+/**
+ * @brief Checks if memory usage might be excessive and warns.
+ */
+static void check_memory_warning(const Fat12 *fs, int verbose, char **error_buf,
+        size_t *error_buf_size, size_t *error_buf_len)
+{
+    if (!fs)
+        return;
+
+    const size_t WARNING_THRESHOLD = 50 * 1024 * 1024;  // 50MB
+    size_t estimated = estimate_memory_usage(fs);
+
+    if (estimated > WARNING_THRESHOLD) {
+        append_error(error_buf, error_buf_size, error_buf_len,
+                "Warning: Verification may use ~%.1f MB of memory",
+                estimated / (1024.0 * 1024.0));
+        if (verbose) {
+            append_error(error_buf, error_buf_size, error_buf_len,
+                    "  Consider using alternative verification method if "
+                    "memory constrained");
+        }
+    }
+}
+
+/**
+ * @brief Main verification function implementation.
+ */
+int fat12_verify_integrity(Fat12 *fs, Fat12IntegrityReport *report, int verbose)
+{
+    if (!fs || !report)
+        return -EINVAL;
+
+    // Initialize report
+    memset(report, 0, sizeof(*report));
+    report->error_details = NULL;
+
+    size_t error_buf_size = 0;
+    size_t error_buf_len = 0;
+    char *error_buf = NULL;
+
+    // Check memory usage and warn if necessary
+    check_memory_warning(
+            fs, verbose, &error_buf, &error_buf_size, &error_buf_len);
+
+    // Check FAT consistency
+    report->fat_consistent = check_fat_consistency(fs);
+    if (report->fat_consistent != 0 && verbose) {
+        append_error(&error_buf, &error_buf_size, &error_buf_len,
+                "FAT replicas are inconsistent");
+    }
+
+    // Count cluster types
+    if (count_cluster_types(fs, &report->free_count, &report->allocated_count,
+                &report->bad_count) != 0) {
+        free(error_buf);
+        return -EIO;
+    }
+
+    // Count root directory entries
+    if (count_root_entries(fs, &report->root_entries_used,
+                &report->root_entries_max) != 0) {
+        free(error_buf);
+        return -EIO;
+    }
+
+    // Detect cross-links
+    Fat12CrossLink *cross_links = NULL;
+    int cross_link_count = 0;
+    if (detect_cross_links(fs, &cross_links, &cross_link_count) == 0) {
+        report->cross_linked_count = cross_link_count;
+
+        if (verbose && cross_link_count > 0) {
+            for (int i = 0; i < cross_link_count; i++) {
+                append_error(&error_buf, &error_buf_size, &error_buf_len,
+                        "Cross-link detected: cluster %u ↔ cluster %u",
+                        cross_links[i].cluster1, cross_links[i].cluster2);
+            }
+        }
+
+        free(cross_links);
+    }
+
+    // Detect orphaned clusters
+    uint16_t *orphaned_clusters = NULL;
+    int orphaned_count = 0;
+    if (detect_orphaned_clusters(fs, &orphaned_clusters, &orphaned_count) ==
+            0) {
+        report->orphaned_count = orphaned_count;
+
+        if (verbose && orphaned_count > 0) {
+            append_error(&error_buf, &error_buf_size, &error_buf_len,
+                    "Found %d orphaned cluster%s:", orphaned_count,
+                    orphaned_count == 1 ? "" : "s");
+
+            for (int i = 0; i < orphaned_count; i++) {
+                if (i == 0) {
+                    append_error(&error_buf, &error_buf_size, &error_buf_len,
+                            "  %u", orphaned_clusters[i]);
+                } else if (i % 8 == 0) {
+                    append_error(&error_buf, &error_buf_size, &error_buf_len,
+                            "\n  %u", orphaned_clusters[i]);
+                } else {
+                    append_error(&error_buf, &error_buf_size, &error_buf_len,
+                            " %u", orphaned_clusters[i]);
+                }
+            }
+        }
+
+        free(orphaned_clusters);
+    }
+
+    // Calculate total errors
+    report->total_errors = 0;
+    if (report->fat_consistent != 0)
+        report->total_errors++;
+    report->total_errors += report->cross_linked_count;
+    report->total_errors += report->orphaned_count;
+
+    // Store error details if any
+    if (error_buf_len > 0) {
+        report->error_details = error_buf;
+    } else {
+        free(error_buf);
+    }
+
+    return 0;
+}
+
+/**
+ * @brief Creates a backup of the FAT12 image.
+ */
+static int create_backup(Fat12 *fs, const char *backup_path)
+{
+    if (!fs || !backup_path)
+        return -EINVAL;
+
+    // Get current position
+    long original_pos = ftell(fs->fp);
+    if (original_pos < 0)
+        return -EIO;
+
+    // Go to beginning
+    if (fseeko(fs->fp, 0, SEEK_SET) != 0)
+        return -EIO;
+
+    // Open backup file
+    FILE *backup_fp = fopen(backup_path, "wb");
+    if (!backup_fp)
+        return -EIO;
+
+    // Copy entire file
+    uint8_t buffer[4096];
+    size_t bytes_read;
+    while ((bytes_read = fread(buffer, 1, sizeof(buffer), fs->fp)) > 0) {
+        if (fwrite(buffer, 1, bytes_read, backup_fp) != bytes_read) {
+            fclose(backup_fp);
+            fseeko(fs->fp, original_pos, SEEK_SET);
+            return -EIO;
+        }
+    }
+
+    fclose(backup_fp);
+
+    // Restore original position
+    if (fseeko(fs->fp, original_pos, SEEK_SET) != 0)
+        return -EIO;
+
+    return 0;
+}
+
+/**
+ * @brief Synchronizes FAT copies (writes primary FAT to all replicas).
+ */
+static int sync_fat_copies(Fat12 *fs)
+{
+    if (!fs || fs->bpb.fat_count < 1)
+        return -EINVAL;
+
+    // Write FAT to all copies
+    for (int i = 0; i < fs->bpb.fat_count; i++) {
+        uint64_t offset = fs->fat_offset + (uint64_t)i * fs->fat_size_bytes;
+        if (fseeko(fs->fp, (off_t)(fs->base_offset + offset), SEEK_SET) != 0)
+            return -EIO;
+
+        if (fwrite(fs->fat, 1, fs->fat_size_bytes, fs->fp) !=
+                fs->fat_size_bytes)
+            return -EIO;
+    }
+
+    return 0;
+}
+
+/**
+ * @brief Frees orphaned clusters (sets FAT entries to 0).
+ */
+/*
+static int free_orphaned_clusters(Fat12 *fs, const uint16_t *clusters, int
+count)
+{
+    if (!fs || !clusters || count <= 0)
+        return 0;
+
+    int freed = 0;
+    for (int i = 0; i < count; i++) {
+        uint16_t cluster = clusters[i];
+        if (cluster >= 2 && cluster < fs->total_clusters + 2) {
+            // Set FAT entry to 0 (free)
+            fat_set(fs, cluster, 0);
+            freed++;
+        }
+    }
+
+    // Write updated FAT to disk
+    if (freed > 0) {
+        if (sync_fat_copies(fs) != 0)
+            return -EIO;
+    }
+
+    return freed;
+}
+*/
+
+/**
+ * @brief Applies fixes based on verification report.
+ */
+int fat12_fix_integrity(Fat12 *fs, const Fat12IntegrityReport *report,
+        const char *backup_path, int *fixes_applied)
+{
+    if (!fs || !report || !fixes_applied)
+        return -EINVAL;
+
+    *fixes_applied = 0;
+
+    // Create backup if requested
+    if (backup_path && backup_path[0] != '\0') {
+        if (create_backup(fs, backup_path) != 0)
+            return -EIO;
+    }
+
+    // Fix FAT inconsistencies
+    if (report->fat_consistent != 0) {
+        if (sync_fat_copies(fs) == 0)
+            (*fixes_applied)++;
+    }
+
+    // Note: Cross-link fixing requires more complex logic
+    // Orphaned cluster fixing would be implemented here when we have
+    // the list of orphaned clusters
 
     return 0;
 }

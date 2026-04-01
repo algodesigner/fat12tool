@@ -107,9 +107,9 @@ static int list_cb(const char *name, const Fat12Node *node, void *user)
     int min = (node->wrt_time >> 5) & 0x3F;
     int sec = (node->wrt_time & 0x1F) * 2;
 
-    printf("%-14s %s %10u %04d-%02d-%02d %02d:%02d:%02d\n",
-            name, node->is_dir ? "<DIR>" : "     ", node->size,
-            year, month, day, hour, min, sec);
+    printf("%-14s %s %10u %04d-%02d-%02d %02d:%02d:%02d\n", name,
+            node->is_dir ? "<DIR>" : "     ", node->size, year, month, day,
+            hour, min, sec);
     return 0;
 }
 
@@ -132,6 +132,12 @@ static void print_help(void)
     printf("  rmdir <path>            Delete an empty directory\n");
     printf("  mv <from> <to>          Rename or move a file/directory\n");
     printf("  stat <path>             Show detailed entry metadata\n");
+    printf("  verify [--full] [--fix] [--verbose] [--yes]\n");
+    printf("         Check and repair filesystem integrity\n");
+    printf("         --full     Perform comprehensive checks\n");
+    printf("         --fix      Attempt to fix detected issues\n");
+    printf("         --verbose  Show detailed progress and findings\n");
+    printf("         --yes      Auto-confirm fixes (use with --fix)\n");
     printf("  help                    Show this help message\n");
     printf("  exit, quit              Exit the shell\n");
 }
@@ -186,6 +192,164 @@ static int write_host_file(const char *path, const uint8_t *buf, uint32_t len)
     }
     fclose(fp);
     return 0;
+}
+
+/**
+ * @brief Creates timestamped backup filename.
+ */
+/*
+static void create_backup_filename(const char *original, char *backup,
+                                   size_t backup_size)
+{
+    if (!original || !backup || backup_size == 0)
+        return;
+
+    time_t now = time(NULL);
+    struct tm *tm_info = localtime(&now);
+
+    snprintf(backup, backup_size, "%s.verify-backup-%04d%02d%02d-%02d%02d%02d",
+             original,
+             tm_info->tm_year + 1900, tm_info->tm_mon + 1, tm_info->tm_mday,
+             tm_info->tm_hour, tm_info->tm_min, tm_info->tm_sec);
+}
+*/
+
+/**
+ * @brief Prompts user for confirmation.
+ */
+static int ask_confirmation(const char *question)
+{
+    if (!question)
+        return 0;
+
+    printf("%s [y/N]: ", question);
+    fflush(stdout);
+
+    char response[32];
+    if (!fgets(response, sizeof(response), stdin))
+        return 0;
+
+    // Trim newline
+    size_t len = strlen(response);
+    while (len > 0 &&
+            (response[len - 1] == '\n' || response[len - 1] == '\r')) {
+        response[--len] = '\0';
+    }
+
+    return (len > 0 && (response[0] == 'y' || response[0] == 'Y'));
+}
+
+/**
+ * @brief Prints verification results in human-readable format.
+ */
+static void print_verification_report(
+        const Fat12IntegrityReport *report, int verbose)
+{
+    if (!report)
+        return;
+
+    printf("Verification Results:\n");
+    printf("  FAT consistency: %s\n",
+            report->fat_consistent == 0 ? "✓ OK" : "✗ Inconsistent");
+
+    if (report->cross_linked_count > 0) {
+        printf("  Cross-linked clusters: ✗ %d found\n",
+                report->cross_linked_count);
+    } else {
+        printf("  Cross-linked clusters: ✓ None\n");
+    }
+
+    if (report->orphaned_count > 0) {
+        printf("  Orphaned clusters: ✗ %d found\n", report->orphaned_count);
+    } else {
+        printf("  Orphaned clusters: ✓ None\n");
+    }
+
+    printf("  Root directory: %d/%d entries (%.1f%%)\n",
+            report->root_entries_used, report->root_entries_max,
+            report->root_entries_max > 0 ? (100.0 * report->root_entries_used /
+                                                   report->root_entries_max)
+                                         : 0.0);
+
+    int total_clusters =
+            report->free_count + report->allocated_count + report->bad_count;
+    if (total_clusters > 0) {
+        printf("  Free space: %d/%d clusters (%.1f%%)\n", report->free_count,
+                total_clusters, 100.0 * report->free_count / total_clusters);
+    }
+
+    printf("  Total issues: %d\n", report->total_errors);
+
+    if (verbose && report->error_details && report->error_details[0] != '\0') {
+        printf("\nDetailed errors:\n%s", report->error_details);
+    }
+}
+
+/**
+ * @brief Main verify command implementation.
+ */
+static void verify_command(Fat12 *fs, int full_check, int fix_issues,
+        int verbose, int auto_confirm)
+{
+    (void)full_check;  // Currently full_check is always enabled
+
+    printf("Verifying FAT12 image integrity...\n");
+
+    Fat12IntegrityReport report;
+    if (fat12_verify_integrity(fs, &report, verbose) != 0) {
+        fprintf(stderr, "Error: Failed to verify image integrity\n");
+        return;
+    }
+
+    print_verification_report(&report, verbose);
+
+    if (fix_issues && report.total_errors > 0) {
+        printf("\n");
+
+        // Show proposed fixes
+        int proposed_fixes = 0;
+        if (report.fat_consistent != 0) {
+            printf("• Fix FAT inconsistency (sync all copies)\n");
+            proposed_fixes++;
+        }
+        if (report.cross_linked_count > 0) {
+            printf("• Fix %d cross-linked cluster%s\n",
+                    report.cross_linked_count,
+                    report.cross_linked_count == 1 ? "" : "s");
+            proposed_fixes++;
+        }
+        if (report.orphaned_count > 0) {
+            printf("• Free %d orphaned cluster%s\n", report.orphaned_count,
+                    report.orphaned_count == 1 ? "" : "s");
+            proposed_fixes++;
+        }
+
+        if (proposed_fixes > 0) {
+            if (!auto_confirm) {
+                if (!ask_confirmation("Apply these fixes?")) {
+                    printf("Fixes cancelled by user\n");
+                    free(report.error_details);
+                    return;
+                }
+            } else {
+                printf("Auto-confirming fixes (--yes flag used)\n");
+            }
+
+            // Apply fixes (without backup for now - will be implemented in
+            // Phase 3)
+            int fixes_applied = 0;
+            if (fat12_fix_integrity(fs, &report, NULL, &fixes_applied) == 0) {
+                printf("✓ Applied %d fix%s\n", fixes_applied,
+                        fixes_applied == 1 ? "" : "es");
+            } else {
+                fprintf(stderr, "Error: Failed to apply fixes\n");
+            }
+        } else {
+            printf("No fixes needed\n");
+        }
+    }
+
+    free(report.error_details);
 }
 
 /**
@@ -341,6 +505,26 @@ int main(int argc, char **argv)
                     node.attr, node.first_cluster, node.size);
             continue;
         }
+        if (strcmp(args[0], "verify") == 0) {
+            int full_check = 0;
+            int fix_issues = 0;
+            int verbose = 0;
+            int auto_confirm = 0;
+
+            for (int i = 1; i < ac; i++) {
+                if (strcmp(args[i], "--full") == 0)
+                    full_check = 1;
+                else if (strcmp(args[i], "--fix") == 0)
+                    fix_issues = 1;
+                else if (strcmp(args[i], "--verbose") == 0)
+                    verbose = 1;
+                else if (strcmp(args[i], "--yes") == 0)
+                    auto_confirm = 1;
+            }
+
+            verify_command(&fs, full_check, fix_issues, verbose, auto_confirm);
+            continue;
+        }
         if (strcmp(args[0], "cat") == 0) {
             if (ac < 2) {
                 fprintf(stderr, "cat: missing path\n");
@@ -462,7 +646,8 @@ int main(int argc, char **argv)
                         args[2]);
             } else {
                 // Preserve attributes
-                time_t mtime = fat12_fat_to_time_t(node.wrt_time, node.wrt_date);
+                time_t mtime =
+                        fat12_fat_to_time_t(node.wrt_time, node.wrt_date);
                 struct utimbuf times = {mtime, mtime};
                 utime(args[2], &times);
                 if (node.attr & ATTR_READ_ONLY) {

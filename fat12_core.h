@@ -57,12 +57,12 @@ typedef struct {
 #pragma pack(pop)
 
 #define ATTR_READ_ONLY 0x01
-#define ATTR_HIDDEN    0x02
-#define ATTR_SYSTEM    0x04
+#define ATTR_HIDDEN 0x02
+#define ATTR_SYSTEM 0x04
 #define ATTR_VOLUME_ID 0x08
 #define ATTR_DIRECTORY 0x10
-#define ATTR_ARCHIVE   0x20
-#define ATTR_LFN       0x0F
+#define ATTR_ARCHIVE 0x20
+#define ATTR_LFN 0x0F
 
 /**
  * @brief Runtime FAT12 filesystem handle.
@@ -304,7 +304,6 @@ time_t fat12_fat_to_time_t(uint16_t fat_time, uint16_t fat_date);
  */
 void fat12_time_t_to_fat(time_t t_in, uint16_t *fat_time, uint16_t *fat_date);
 
-
 /**
  * @brief Renames or moves a file or directory.
  *
@@ -325,5 +324,53 @@ int fat12_rename(Fat12 *fs, const char *from, const char *to);
  */
 int fat12_parse_partition_offset(
         const char *img, int partition_idx, uint64_t *offset_out);
+
+/**
+ * @brief Integrity verification report structure.
+ */
+typedef struct {
+    int fat_consistent;     /* FAT replicas match (0=ok, -1=error) */
+    int cross_linked_count; /* Number of cross-linked clusters */
+    int orphaned_count;     /* Number of orphaned clusters */
+    int free_count;         /* Count of free clusters */
+    int allocated_count;    /* Count of allocated clusters */
+    int bad_count;          /* Count of bad clusters (0xFF7) */
+    int root_entries_used;  /* Actual root entries used */
+    int root_entries_max;   /* Maximum root entries allowed */
+    int total_errors;       /* Sum of all errors found */
+    char *error_details;    /* Detailed error messages (allocated) */
+} Fat12IntegrityReport;
+
+/**
+ * @brief Cross-link pair structure.
+ */
+typedef struct {
+    uint16_t cluster1;
+    uint16_t cluster2;
+} Fat12CrossLink;
+
+/**
+ * @brief Verifies FAT12 filesystem integrity.
+ *
+ * @param fs           Open FAT12 context.
+ * @param report       Output verification report.
+ * @param verbose      Non-zero to collect detailed error messages.
+ * @return 0 on success, negative errno-style code on failure.
+ */
+int fat12_verify_integrity(
+        Fat12 *fs, Fat12IntegrityReport *report, int verbose);
+
+/**
+ * @brief Applies fixes based on verification report.
+ *
+ * @param fs             Open FAT12 context.
+ * @param report         Verification report with issues to fix.
+ * @param backup_path    Path to create backup before fixing (NULL for no
+ * backup).
+ * @param fixes_applied  Output count of fixes applied.
+ * @return 0 on success, negative errno-style code on failure.
+ */
+int fat12_fix_integrity(Fat12 *fs, const Fat12IntegrityReport *report,
+        const char *backup_path, int *fixes_applied);
 
 #endif
