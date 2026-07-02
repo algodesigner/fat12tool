@@ -440,6 +440,51 @@ int test_corrupt_fat_crosslink(const char *fs_path, uint16_t cluster1, uint16_t 
     return 0;
 }
 
+int test_corrupt_orphan(const char *fs_path, uint16_t cluster)
+{
+    FILE *fp = fopen(fs_path, "rb+");
+    if (!fp)
+        return -1;
+
+    BootSector boot;
+    if (read_at(fp, 0, &boot, sizeof(boot)) != 0) {
+        fclose(fp);
+        return -1;
+    }
+
+    uint16_t sector_size = boot.bytes_per_sector;
+    uint16_t sectors_per_fat = boot.sectors_per_fat;
+    uint64_t fat_offset = (uint64_t)boot.reserved_sectors * sector_size;
+
+    size_t fat_size_bytes = (size_t)sectors_per_fat * sector_size;
+    uint8_t *fat = malloc(fat_size_bytes);
+    if (!fat) {
+        fclose(fp);
+        return -1;
+    }
+
+    if (read_at(fp, fat_offset, fat, fat_size_bytes) != 0) {
+        free(fat);
+        fclose(fp);
+        return -1;
+    }
+
+    /* Mark cluster as allocated (end-of-chain) */
+    set_fat_entry_raw(fat, fat_size_bytes, cluster, 0xFFF);
+
+    for (int i = 0; i < boot.fat_count; i++) {
+        if (write_at(fp, fat_offset + (uint64_t)i * fat_size_bytes, fat, fat_size_bytes) != 0) {
+            free(fat);
+            fclose(fp);
+            return -1;
+        }
+    }
+
+    free(fat);
+    fclose(fp);
+    return 0;
+}
+
 int test_corrupt_directory_entry(const char *fs_path, const char *path)
 {
     Fat12 fs;

@@ -6,6 +6,7 @@
 
 CC ?= gcc
 CFLAGS ?= -std=c11 -Wall -Wextra -Wpedantic -O2
+VERSION ?= 0.1.0
 
 PREFIX ?= /usr/local
 BINDIR = $(DESTDIR)$(PREFIX)/bin
@@ -82,7 +83,17 @@ uninstall:
 	rm -f $(BINDIR)/fat12mount
 	rm -f $(BINDIR)/fat12mount.exe
 
-test: fat12tool$(EXE) test-core test-unit test-cli test-verify test-mount-robust
+test: fat12tool$(EXE) test-version test-core test-unit test-cli test-verify test-mount-robust
+
+test-version: fat12tool$(EXE)
+	@printf "  Testing version reporting... "
+	@./fat12tool$(EXE) --version | grep -q "$(VERSION)" && echo "fat12tool PASS" || (echo "fat12tool FAIL"; exit 1)
+ifneq ($(HAVE_WINFSP),00)
+	@./fat12mount.exe --version | grep -q "$(VERSION)" && echo "fat12mount.exe PASS" || (echo "fat12mount.exe FAIL"; exit 1)
+endif
+ifneq ($(HAVE_FUSE),00)
+	@./fat12mount --version | grep -q "$(VERSION)" && echo "fat12mount PASS" || (echo "fat12mount FAIL"; exit 1)
+endif
 
 fat12_stress: tests/fat12_stress.c
 	$(CC) $(CFLAGS) -o tests/fat12_stress tests/fat12_stress.c
@@ -112,18 +123,18 @@ fat12_core.o: fat12_core.c fat12_core.h
 	$(CC) $(CFLAGS) -c -o $@ fat12_core.c
 
 fat12tool$(EXE): fat12tool.c fat12_core.o $(CORE_HDRS)
-	$(CC) $(CFLAGS) -o $@ fat12tool.c fat12_core.o
+	$(CC) $(CFLAGS) -DVERSION=\"$(VERSION)\" -o $@ fat12tool.c fat12_core.o
 
 fat12mount: fat12mount.c vfs_ops.h vfs_fuse.c fat12_core.o $(CORE_HDRS)
 ifeq ($(HAVE_FUSE),1)
-	$(CC) $(CFLAGS) $(FUSE_CFLAGS) -o $@ fat12mount.c vfs_fuse.c fat12_core.o $(FUSE_LIBS) $(FUSE_LDFLAGS) -lpthread
+	$(CC) $(CFLAGS) -DVERSION=\"$(VERSION)\" $(FUSE_CFLAGS) -o $@ fat12mount.c vfs_fuse.c fat12_core.o $(FUSE_LIBS) $(FUSE_LDFLAGS) -lpthread
 else
 	@echo "Skipping fat12mount (FUSE not available in build environment)."
 endif
 
 fat12mount.exe: fat12mount.c vfs_ops.h vfs_winfsp.c fat12_core.o $(CORE_HDRS)
 ifeq ($(HAVE_WINFSP),1)
-	$(CC) $(CFLAGS) $(WINFSP_CFLAGS) -o $@ fat12mount.c vfs_winfsp.c fat12_core.o $(WINFSP_LIBS) -lbcrypt -lpthread
+	$(CC) $(CFLAGS) -DVERSION=\"$(VERSION)\" $(WINFSP_CFLAGS) -o $@ fat12mount.c vfs_winfsp.c fat12_core.o $(WINFSP_LIBS) -lbcrypt -lpthread
 else
 	@echo "Skipping fat12mount.exe (WinFSP not available in build environment)."
 endif

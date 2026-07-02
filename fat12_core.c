@@ -681,6 +681,12 @@ static int collect_chain(Fat12 *fs, uint16_t first, uint16_t **arr, size_t *n)
 
     uint16_t c = first;
     while (c >= 2 && c < 0xFF7) {
+        // Cycle detection: if we've already collected this cluster, stop
+        for (size_t i = 0; i < *n; i++) {
+            if (v[i] == c)
+                return 0;
+        }
+
         if (*n == cap) {
             cap *= 2;
             uint16_t *nv = (uint16_t *)realloc(v, cap * sizeof(uint16_t));
@@ -1868,6 +1874,10 @@ static int traverse_directory(
         // Subdirectory
         uint16_t c = dir_cluster;
         while (c >= 2 && c < 0xFF7) {
+            if (ref_bitmap[c])
+                break;
+            ref_bitmap[c] = 1;
+
             uint64_t base = cluster_to_offset(fs, c);
             uint32_t cnt = fs->cluster_size / sizeof(DirEntry);
 
@@ -1993,6 +2003,8 @@ static int detect_cross_links(Fat12 *fs, Fat12CrossLink **links, int *count)
         // Mark entire chain as visited
         current = cluster;
         while (current >= 2 && current < 0xFF7) {
+            if (visited[current])
+                break;
             visited[current] = 1;
             uint16_t next = fat_get(fs, current);
             if (next >= 0xFF8)

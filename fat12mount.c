@@ -128,6 +128,13 @@ int main(int argc, char *argv[])
     char *image = NULL, *mountpoint = NULL;
     int partition = 0, unmount_flag = 0;
 
+    for (int i = 1; i < argc; ++i) {
+        if (strcmp(argv[i], "--version") == 0 || strcmp(argv[i], "-V") == 0) {
+            printf("fat12mount version " VERSION "\n");
+            return 0;
+        }
+    }
+
 #if defined(_WIN32)
     {
         HMODULE h = LoadLibrary("winfsp-x64.dll");

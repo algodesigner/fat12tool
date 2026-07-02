@@ -249,19 +249,20 @@ static void print_verification_report(
 
     printf("Verification Results:\n");
     printf("  FAT consistency: %s\n",
-            report->fat_consistent == 0 ? "✓ OK" : "✗ Inconsistent");
+            report->fat_consistent == 0 ? "[OK]" : "[INCONSISTENT]");
 
     if (report->cross_linked_count > 0) {
-        printf("  Cross-linked clusters: ✗ %d found\n",
+        printf("  Cross-linked clusters: [ERROR] %d found\n",
                 report->cross_linked_count);
     } else {
-        printf("  Cross-linked clusters: ✓ None\n");
+        printf("  Cross-linked clusters: [OK] None\n");
     }
 
     if (report->orphaned_count > 0) {
-        printf("  Orphaned clusters: ✗ %d found\n", report->orphaned_count);
+        printf("  Orphaned clusters: [ERROR] %d found\n",
+                report->orphaned_count);
     } else {
-        printf("  Orphaned clusters: ✓ None\n");
+        printf("  Orphaned clusters: [OK] None\n");
     }
 
     printf("  Root directory: %d/%d entries (%.1f%%)\n",
@@ -372,6 +373,10 @@ int main(int argc, char **argv)
         if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
             fprintf(stderr, "Usage: %s <fat12-image-file> [--partition N]\n",
                     argv[0]);
+            return 0;
+        }
+        if (strcmp(argv[i], "--version") == 0 || strcmp(argv[i], "-V") == 0) {
+            printf("fat12tool version " VERSION "\n");
             return 0;
         }
         if (strcmp(argv[i], "--partition") == 0 && i + 1 < argc) {

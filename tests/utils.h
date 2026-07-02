@@ -76,6 +76,8 @@ int test_corrupt_boot_sector(const char *fs_path);
  */
 int test_corrupt_fat_crosslink(const char *fs_path, uint16_t cluster1, uint16_t cluster2);
 
+int test_corrupt_orphan(const char *fs_path, uint16_t cluster);
+
 /**
  * @brief Corrupts a directory entry with invalid data.
  *
