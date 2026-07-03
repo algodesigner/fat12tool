@@ -57,6 +57,16 @@ echo "from-host-write" > "$HOST_SRC"
   echo "rm /NEWDIR/MOVETST.TXT"
   echo "rmdir /NEWDIR"
   echo "stat /HELLO.TXT"
+  echo "attrib /HELLO.TXT"
+  echo "attrib /HELLO.TXT +R +H"
+  echo "attrib /HELLO.TXT"
+  echo "stat /HELLO.TXT"
+  echo "attrib /HELLO.TXT -R -H"
+  echo "attrib /HELLO.TXT"
+  echo "stat /HELLO.TXT"
+  echo "attrib /HELLO.TXT +A"
+  echo "stat /HELLO.TXT"
+  echo "attrib /HELLO.TXT"
   echo "verify"
   echo "verify --verbose"
   echo "verify --full"
@@ -71,6 +81,11 @@ grep -q "NEST.TXT" "$LOG"
 grep -q "MOVETST.TXT" "$LOG"
 
 grep -q "from-host-write" "$HOST_OUT"
+
+# Attrib command checks
+grep -q "RH--A" "$LOG"
+grep -q "attr=0x23" "$LOG"
+grep -q "attr=0x20" "$LOG"
 
 # Verify command output checks
 grep -q "Verifying FAT12 image integrity" "$LOG"

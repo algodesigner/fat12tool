@@ -115,6 +115,7 @@ Commands:
 - `rm <path>`
 - `rmdir <path>`
 - `stat <path>` (displays detailed metadata including attribute bits)
+- `attrib <path> [+-][RHSA]` (get or set file attributes: R=read-only, H=hidden, S=system, A=archive)
 - `verify [--full] [--fix] [--verbose] [--yes]` (check and repair filesystem integrity)
 - `help`
 - `exit`
@@ -130,6 +131,11 @@ fat12:/> cat /README.TXT
 fat12:/> write ./local.txt /LOCAL.TXT
 fat12:/> mkdir /DOCS
 fat12:/> read /LOCAL.TXT ./copy.txt
+fat12:/> attrib /LOCAL.TXT
+  R---A /LOCAL.TXT
+fat12:/> attrib /LOCAL.TXT +H
+fat12:/> stat /LOCAL.TXT
+name=LOCAL.TXT attr=0x23 cluster=6 size=
 fat12:/> exit
  ```
 

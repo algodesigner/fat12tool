@@ -133,6 +133,9 @@ static void print_help(void)
     printf("  rmdir <path>            Delete an empty directory\n");
     printf("  mv <from> <to>          Rename or move a file/directory\n");
     printf("  stat <path>             Show detailed entry metadata\n");
+    printf("  attrib <path> [+-][RHSA]\n");
+    printf("         Get or set file attributes\n");
+    printf("         R=read-only H=hidden S=system A=archive\n");
     printf("  verify [--full] [--fix] [--verbose] [--yes]\n");
     printf("         Check and repair filesystem integrity\n");
     printf("         --full     Perform comprehensive checks\n");
@@ -518,6 +521,81 @@ int main(int argc, char **argv)
 
             printf("name=%s attr=0x%02X cluster=%u size=%u\n", name_ptr,
                     node.attr, node.first_cluster, node.size);
+            continue;
+        }
+        if (strcmp(args[0], "attrib") == 0) {
+            if (ac < 2) {
+                fprintf(stderr, "attrib: missing path\n");
+                continue;
+            }
+            char path[MAX_PATH_LEN];
+            normalize_path(&sess, args[1], path, sizeof(path));
+            Fat12Node node;
+            if (fat12_stat(&fs, path, &node) != 0) {
+                fprintf(stderr, "attrib: not found: %s\n", path);
+                continue;
+            }
+
+            if (ac == 2) {
+                printf("  %c%c%c%c%c %s\n",
+                        node.attr & ATTR_READ_ONLY  ? 'R' : '-',
+                        node.attr & ATTR_HIDDEN     ? 'H' : '-',
+                        node.attr & ATTR_SYSTEM     ? 'S' : '-',
+                        node.attr & ATTR_DIRECTORY  ? 'D' : '-',
+                        node.attr & ATTR_ARCHIVE    ? 'A' : '-',
+                        path);
+                continue;
+            }
+
+            uint8_t new_attr = node.attr;
+            int attr_error = 0;
+
+            for (int i = 2; i < ac; i++) {
+                char *flag = args[i];
+                if (flag[0] == '+' || flag[0] == '-') {
+                    if (flag[1] == '\0') {
+                        fprintf(stderr, "attrib: empty flag: %c\n", flag[0]);
+                        attr_error = 1;
+                        continue;
+                    }
+                    for (int j = 1; flag[j]; j++) {
+                        switch (flag[j]) {
+                            case 'R': case 'r':
+                                if (flag[0] == '+') new_attr |= ATTR_READ_ONLY;
+                                else new_attr &= ~ATTR_READ_ONLY;
+                                break;
+                            case 'H': case 'h':
+                                if (flag[0] == '+') new_attr |= ATTR_HIDDEN;
+                                else new_attr &= ~ATTR_HIDDEN;
+                                break;
+                            case 'S': case 's':
+                                if (flag[0] == '+') new_attr |= ATTR_SYSTEM;
+                                else new_attr &= ~ATTR_SYSTEM;
+                                break;
+                            case 'A': case 'a':
+                                if (flag[0] == '+') new_attr |= ATTR_ARCHIVE;
+                                else new_attr &= ~ATTR_ARCHIVE;
+                                break;
+                            default:
+                                fprintf(stderr, "attrib: unknown flag: %c\n", flag[j]);
+                                attr_error = 1;
+                                break;
+                        }
+                    }
+                } else {
+                    fprintf(stderr, "attrib: unexpected argument: %s\n", flag);
+                    attr_error = 1;
+                }
+            }
+
+            if (!attr_error) {
+                if (node.attr & ATTR_DIRECTORY)
+                    new_attr |= ATTR_DIRECTORY;
+
+                if (fat12_set_attr(&fs, path, new_attr) != 0) {
+                    fprintf(stderr, "attrib: failed to set attributes\n");
+                }
+            }
             continue;
         }
         if (strcmp(args[0], "verify") == 0) {
